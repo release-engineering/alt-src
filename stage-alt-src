@@ -1,0 +1,44 @@
+#!/usr/bin/python
+
+'''
+Given an srpm and product, stage for alt-src release
+'''
+
+def get_options():
+    """process options from command line"""
+
+    usage = _("%prog [options] branch srpm [srpm ...]")
+    parser = OptionParser(usage=usage)
+    # TODO - config file
+    parser.add_option("-v", "--verbose", action="store_true", default=False,
+                      help=_("be more verbose"))
+    parser.add_option("-d", "--debug", action="store_true", default=False,
+                      help=_("show debug output"))
+    parser.add_option("--stagedir", default='/srv/alt-src-stage',
+                      help=_("staging directory"))
+    (options, args) = parser.parse_args()
+
+    if not os.path.isdir(options.stagedir):
+        parser.error("No such directory: %s" % options.stagedir)
+
+    options.branch = args[1]
+    options.sources = args[2:]
+    return options
+
+
+def die(msg):
+    print msg
+    sys.exit(1)
+
+
+def main():
+    for src in options.sources:
+        if not os.path.isfile(src):
+            die("No such file: %s", src)
+
+
+if __name__ == '__main__':
+    options = get_options()
+    main()
+
+# the end
