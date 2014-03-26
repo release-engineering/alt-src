@@ -1,8 +1,24 @@
 #!/usr/bin/python
 
+import koji
+from optparse import OptionParser
+import os
+import os.path
+import rpm
+import subprocess
+import sys
+
+
+
 '''
 Given an srpm and product, stage for alt-src release
 '''
+
+
+def _(args):
+    """Stub function for translation"""
+    return args
+
 
 def get_options():
     """process options from command line"""
@@ -21,9 +37,36 @@ def get_options():
     if not os.path.isdir(options.stagedir):
         parser.error("No such directory: %s" % options.stagedir)
 
-    options.branch = args[1]
-    options.sources = args[2:]
+    options.branch = args[0]
+    options.sources = args[1:]
     return options
+
+
+def explode_srpm(srpm, destdir=None):
+    # explode a single srpm
+    h = koji.get_rpm_header(srpm)
+    if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
+        die("%s is not a source package" % srpm)
+    data = koji.get_header_fields(h,['name','version','release'])
+    nvr = "%(name)s-%(version)s-%(release)s" % data
+    if destdir:
+        dirname = os.path.join(destdir, nvr)
+    else:
+        dirname = os.path.abspath(nvr)
+    if os.path.islink(dirname):
+        die("%s is a symlink" % dirname)
+    elif os.path.isdir(dirname):
+        die("%s directory exists" % dirname)
+    elif os.path.exists(dirname):
+        die("%s exists" % dirname)
+    koji.ensuredir(dirname)
+    cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % dirname, srpm]
+    print "Running: %r" % cmd
+    proc = subprocess.Popen(cmd)
+    ret = proc.wait()
+    if ret:
+        die("command failed: %r" % cmd)
+
 
 
 def die(msg):
@@ -32,9 +75,11 @@ def die(msg):
 
 
 def main():
+    print options.sources
     for src in options.sources:
         if not os.path.isfile(src):
             die("No such file: %s", src)
+        explode_srpm(src)
 
 
 if __name__ == '__main__':
