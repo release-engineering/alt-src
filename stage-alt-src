@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import ConfigParser
 import koji
 from optparse import OptionParser
 import os
@@ -26,20 +27,63 @@ def get_options():
     usage = _("%prog [options] branch srpm [srpm ...]")
     parser = OptionParser(usage=usage)
     # TODO - config file
+    parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
+                      help=_("use alternate configuration file"), metavar="FILE")
     parser.add_option("-v", "--verbose", action="store_true", default=False,
                       help=_("be more verbose"))
     parser.add_option("-d", "--debug", action="store_true", default=False,
                       help=_("show debug output"))
-    parser.add_option("--stagedir", default='/srv/alt-src-stage',
-                      help=_("staging directory"))
+    parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
+                      help=_("set config option"))
     (options, args) = parser.parse_args()
-
-    if not os.path.isdir(options.stagedir):
-        parser.error("No such directory: %s" % options.stagedir)
 
     options.branch = args[0]
     options.sources = args[1:]
+
+    options.config = get_config(options.cfile, options.copts)
+
     return options
+
+
+config_defaults = {
+    'stagedir' : '/srv/alt-src-stage',
+}
+
+config_int_opts = set()
+config_bool_opts = set()
+
+def get_config(cfile, overrides):
+    if not os.access(cfile, os.F_OK):
+        die("Missing config file: %s" % cfile)
+    cp = ConfigParser.RawConfigParser()
+    cp.read(cfile)
+    if not cp.has_section('altsrc'):
+        die("Configuration file missing [altsrc] section: %s" % cfile)
+
+    #apply overrides from command line
+    overrides = overrides or []
+    for opt in overrides:
+        parts = opt.split("=", 1)
+        if len(parts) != 2:
+            die('Invalid option specification: %s\nUse OPT=VALUE' % opt)
+        key, value = parts
+        cp.set('altsrc', key, value)
+
+    #generate config dictionary
+    config = dict(config_defaults)  #copy
+    for key in cp.options('altsrc'):
+        if key in config_int_opts:
+            config[key] = cp.getint('altsrc', key)
+        elif key in config_bool_opts:
+            config[key] = cp.getboolean('altsrc', key)
+        else:
+            config[key] = cp.get('altsrc', key)
+
+    #sanity checks
+    if not os.path.isdir(config['stagedir']):
+        die("No such directory: %s" % config['stagedir'])
+
+    return config
 
 
 def explode_srpm(srpm, destdir=None):
