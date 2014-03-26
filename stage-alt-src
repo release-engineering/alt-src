@@ -32,6 +32,8 @@ def get_options():
                       help=_("be more verbose"))
     parser.add_option("-d", "--debug", action="store_true", default=False,
                       help=_("show debug output"))
+    parser.add_option("--force", action="store_true", default=False,
+                      help=_("force operation"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
                       help=_("set config option"))
     (options, args) = parser.parse_args()
@@ -97,7 +99,9 @@ class Stager(object):
             die("No such file: %s", self.srpm)
 
     def run(self):
-        pass
+        self.read_srpm()
+        # TODO: package whitelist/blacklist
+        self.make_workdir()
 
 
     def read_srpm(self):
@@ -105,17 +109,23 @@ class Stager(object):
         self.headers = h
         if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
             die("%s is not a source package" % self.srpm)
-        data = koji.get_header_fields(h,['name','version','release'])
+        data = koji.get_header_fields(h, ['name','version','release'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
+        self.package = data['name']
 
-
-    def _junk(self):
+    def make_workdir(self):
+        dirname = os.path.join(self.options.config['stagedir'], self.nvr)
         if os.path.islink(dirname):
             die("%s is a symlink" % dirname)
         elif os.path.isdir(dirname):
-            die("%s directory exists" % dirname)
+            if self.options.force:
+                print "Overwriting existing workdir: %s" % dirname
+            else:
+                die("Work directory %s directory exists, use --force to overwrite." % dirname)
         elif os.path.exists(dirname):
-            die("%s exists" % dirname)
+            die("%s exists and is not a directory" % dirname)
+        koji.ensuredir(dirname)
+        self.workdir = dirname
 
     def explode_srpm(srpm, destdir=None):
         # explode our srpm to the given directory
