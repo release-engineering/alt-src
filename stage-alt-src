@@ -24,9 +24,8 @@ def _(args):
 def get_options():
     """process options from command line"""
 
-    usage = _("%prog [options] branch srpm [srpm ...]")
+    usage = _("%prog [options] branch srpm")
     parser = OptionParser(usage=usage)
-    # TODO - config file
     parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
                       help=_("use alternate configuration file"), metavar="FILE")
     parser.add_option("-v", "--verbose", action="store_true", default=False,
@@ -38,7 +37,7 @@ def get_options():
     (options, args) = parser.parse_args()
 
     options.branch = args[0]
-    options.sources = args[1:]
+    options.source = args[1]
 
     options.config = get_config(options.cfile, options.copts)
 
@@ -47,6 +46,8 @@ def get_options():
 
 config_defaults = {
     'stagedir' : '/srv/alt-src-stage',
+    'gitdir' : '/srv/git',
+    'lookaside' : '/srv/cache/lookaside',
 }
 
 config_int_opts = set()
@@ -86,30 +87,54 @@ def get_config(cfile, overrides):
     return config
 
 
-def explode_srpm(srpm, destdir=None):
-    # explode a single srpm
-    h = koji.get_rpm_header(srpm)
-    if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
-        die("%s is not a source package" % srpm)
-    data = koji.get_header_fields(h,['name','version','release'])
-    nvr = "%(name)s-%(version)s-%(release)s" % data
-    if destdir:
-        dirname = os.path.join(destdir, nvr)
-    else:
-        dirname = os.path.abspath(nvr)
-    if os.path.islink(dirname):
-        die("%s is a symlink" % dirname)
-    elif os.path.isdir(dirname):
-        die("%s directory exists" % dirname)
-    elif os.path.exists(dirname):
-        die("%s exists" % dirname)
-    koji.ensuredir(dirname)
-    cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % dirname, srpm]
-    print "Running: %r" % cmd
-    proc = subprocess.Popen(cmd)
-    ret = proc.wait()
-    if ret:
-        die("command failed: %r" % cmd)
+class Stager(object):
+
+    def __init__(self, options):
+        self.options = options
+        self.srpm = options.source
+        #TODO - support pulling srpm from Brew
+        if not os.path.isfile(self.srpm):
+            die("No such file: %s", self.srpm)
+
+    def run(self):
+        pass
+
+
+    def read_srpm(self):
+        h = koji.get_rpm_header(self.srpm)
+        self.headers = h
+        if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
+            die("%s is not a source package" % self.srpm)
+        data = koji.get_header_fields(h,['name','version','release'])
+        self.nvr = "%(name)s-%(version)s-%(release)s" % data
+
+
+    def _junk(self):
+        if os.path.islink(dirname):
+            die("%s is a symlink" % dirname)
+        elif os.path.isdir(dirname):
+            die("%s directory exists" % dirname)
+        elif os.path.exists(dirname):
+            die("%s exists" % dirname)
+
+    def explode_srpm(srpm, destdir=None):
+        # explode our srpm to the given directory
+        h = koji.get_rpm_header(srpm)
+        if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
+            # we checked this earlier, but since we're about to rpm -i it,
+            # let's check again
+            die("%s is not a source package" % srpm)
+        if destdir is None:
+            destdir = os.getcwd()
+        else:
+            destdir = os.path.abspath(destdir)
+            koji.ensuredir(destdir)
+        cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % destdir, srpm]
+        print "Running: %r" % cmd
+        proc = subprocess.Popen(cmd)
+        ret = proc.wait()
+        if ret:
+            die("command failed: %r" % cmd)
 
 
 
@@ -118,16 +143,9 @@ def die(msg):
     sys.exit(1)
 
 
-def main():
-    print options.sources
-    for src in options.sources:
-        if not os.path.isfile(src):
-            die("No such file: %s", src)
-        explode_srpm(src)
-
 
 if __name__ == '__main__':
     options = get_options()
-    main()
+    Stager(options).run()
 
 # the end
