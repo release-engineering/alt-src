@@ -142,6 +142,7 @@ class Stager(object):
         dst = os.path.join(self.workdir, "%s.git" % self.package)
         cmd = ['git', 'clone', '--local', '--bare', '-v', src, dst]
         # TODO - template? git config?
+        # TODO - committer data?
         proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         ret = proc.wait()
         if ret:
