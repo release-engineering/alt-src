@@ -102,7 +102,9 @@ class Stager(object):
         self.read_srpm()
         # TODO: package whitelist/blacklist
         self.make_workdir()
-
+        self.sync_repo()
+        self.clone_repo()
+        self.import_srpm()
 
     def read_srpm(self):
         h = koji.get_rpm_header(self.srpm)
@@ -120,6 +122,7 @@ class Stager(object):
         elif os.path.isdir(dirname):
             if self.options.force:
                 print "Overwriting existing workdir: %s" % dirname
+                koji.util.rmtree(dirname)
             else:
                 die("Work directory %s directory exists, use --force to overwrite." % dirname)
         elif os.path.exists(dirname):
@@ -127,25 +130,92 @@ class Stager(object):
         koji.ensuredir(dirname)
         self.workdir = dirname
 
-    def explode_srpm(srpm, destdir=None):
-        # explode our srpm to the given directory
-        h = koji.get_rpm_header(srpm)
-        if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
-            # we checked this earlier, but since we're about to rpm -i it,
-            # let's check again
-            die("%s is not a source package" % srpm)
-        if destdir is None:
-            destdir = os.getcwd()
-        else:
-            destdir = os.path.abspath(destdir)
-            koji.ensuredir(destdir)
-        cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % destdir, srpm]
-        print "Running: %r" % cmd
-        proc = subprocess.Popen(cmd)
+    def sync_repo(self):
+        # TODO
+        pass
+
+    def clone_repo(self):
+        """Clone master repo into working directory"""
+        logname = os.path.join(self.workdir, 'clone.log')
+        fo = file(logname, 'wb')
+        src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
+        dst = os.path.join(self.workdir, "%s.git" % self.package)
+        cmd = ['git', 'clone', '--local', '--bare', '-v', src, dst]
+        # TODO - template? git config?
+        proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         ret = proc.wait()
         if ret:
             die("command failed: %r" % cmd)
 
+    def import_srpm(self):
+        """Import our srpm on the specified branch"""
+        # first we need a temporary non-bare checkout to work with
+        logname = os.path.join(self.workdir, 'import.log')
+        fo = file(logname, 'wb')
+
+        src = os.path.join(self.workdir, "%s.git" % self.package)
+        dst = os.path.join(self.workdir, "tmp.%s" % self.package)
+        cmd = ['git', 'clone', '--local', '-v', src, dst]
+        proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+        #switch branch
+        #TODO - smarter sanity checks
+        cmd = ['git', 'checkout', self.options.branch]
+        #XXX - should be more paranoid here
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+        #explode our srpm
+        wipe_git_dir(dst)
+        explode_srpm(self.srpm, dst)
+
+        cmd = ['git', 'add', '-A', '.']
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+        #TODO - deal with lookaside
+
+        cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+        #push back to our bare git directory
+        cmd = ['git', 'push', 'origin', self.options.branch]
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+
+def explode_srpm(srpm, destdir=None):
+    # explode our srpm to the given directory
+    h = koji.get_rpm_header(srpm)
+    if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
+        # we checked this earlier, but since we're about to rpm -i it,
+        # let's check again
+        die("%s is not a source package" % srpm)
+    if destdir is None:
+        destdir = os.getcwd()
+    else:
+        destdir = os.path.abspath(destdir)
+        koji.ensuredir(destdir)
+    cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % destdir, srpm]
+    #print "Running: %r" % cmd
+    #TODO: logfile
+    proc = subprocess.Popen(cmd)
+    ret = proc.wait()
+    if ret:
+        die("command failed: %r" % cmd)
+
+
+def wipe_git_dir(dirname):
+    for fn in os.listdir(dirname):
+        if fn == '.git':
+            continue
+        path = os.path.join(dirname, fn)
+        if os.path.isdir(path):
+            koji.rmtree(path)
+        else:
+            os.unlink(path)
 
 
 def die(msg):
