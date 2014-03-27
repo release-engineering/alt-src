@@ -185,6 +185,9 @@ class Stager(object):
         proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
+        #remove temp dir
+        koji.util.rmtree(dst)
+
 
 def explode_srpm(srpm, destdir=None):
     # explode our srpm to the given directory
