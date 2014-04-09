@@ -254,7 +254,6 @@ def explode_srpm(srpm, destdir=None, logfile=None):
         koji.ensuredir(destdir)
     cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % destdir, srpm]
     #print "Running: %r" % cmd
-    #TODO: logfile
     popts = {'close_fds':True}
     if logfile:
         popts['stdout'] = logfile
@@ -288,7 +287,7 @@ def setup_logging(options):
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
     if options.config['log_file']:
-        handler = logging.handlers.RotatingFileHandler(options.config['log_file'])
+        handler = logging.FileHandler(options.config['log_file'])
         handler.setFormatter(logging.Formatter(options.config['log_format']))
         handler.setLevel(logging.DEBUG)
         logger.addHandler(handler)
