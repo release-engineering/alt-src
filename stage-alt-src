@@ -7,6 +7,7 @@ from optparse import OptionParser
 import os
 import os.path
 import rpm
+import rpmpatch
 import subprocess
 import sys
 
@@ -114,8 +115,10 @@ class Stager(object):
         self.make_workdir()
         self.sync_repo()
         self.clone_repo()
+        self.setup_checkout()
         self.import_srpm()
         self.debrand()
+        self.clear_checkout()
         self.notify()
 
     def read_srpm(self):
@@ -127,20 +130,20 @@ class Stager(object):
         data = koji.get_header_fields(h, ['name','version','release'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
+        self.version = data['version']
 
     def check_package(self):
         """Check whitelist/blacklist and load any package rules"""
 
         whitelist = self.options.config['whitelist'].split()
         if whitelist:
-            whitelisted = koji.util.multi_fnmatch(self, self.package, whitelist)
+            whitelisted = koji.util.multi_fnmatch(self.package, whitelist)
         else:
             whitelisted = False
         if not whitelisted:
             blacklist = self.options.config['blacklist'].split()
-            if blacklist and koji.util.multi_fnmatch(self, self.package, blacklist):
+            if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
                 die('Blacklisted package: %s' % self.package)
-        # TODO - load package rules
 
     def make_workdir(self):
         dirname = os.path.join(self.options.config['stagedir'], self.nvr)
@@ -180,8 +183,9 @@ class Stager(object):
         fo = file(logname, 'wb')
         src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
         dst = os.path.join(self.workdir, "%s.git" % self.package)
+        self.logger.info('Cloning primary %s repo from %s', self.package, src)
         cmd = ['git', 'clone', '--shared', '--bare', '-v', src, dst]
-        # [??] use --shared?
+        # is --shared ok for us?
         # TODO - template? git config?
         # TODO - committer data?
         proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
@@ -189,26 +193,36 @@ class Stager(object):
         if ret:
             die("command failed: %r" % cmd)
 
-    def import_srpm(self):
-        """Import our srpm on the specified branch"""
-        # first we need a temporary non-bare checkout to work with
-        logname = os.path.join(self.workdir, 'import.log')
+    def setup_checkout(self):
+        """Setup a temporary non-bare checkout to work with"""
+
+        logname = os.path.join(self.workdir, 'checkout.log')
         fo = file(logname, 'wb')
 
         src = os.path.join(self.workdir, "%s.git" % self.package)
         dst = os.path.join(self.workdir, "tmp.%s" % self.package)
+        self.checkout = dst
+        self.logger.info('Setting up temporary checkout: %s', dst)
         cmd = ['git', 'clone', '--local', '-v', src, dst]
         proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
         #switch branch
+        self.logger.info('Switching to branch %s', self.options.branch)
         #TODO - smarter sanity checks
         cmd = ['git', 'checkout', self.options.branch]
         #XXX - should be more paranoid here
         proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
+    def import_srpm(self):
+        """Import our srpm on the specified branch"""
+
+        logname = os.path.join(self.workdir, 'import.log')
+        fo = file(logname, 'wb')
+
         #explode our srpm
+        dst = self.checkout
         wipe_git_dir(dst)
         explode_srpm(self.srpm, dst, logfile=fo)
 
@@ -227,12 +241,69 @@ class Stager(object):
         proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
-        #remove temp dir
-        koji.util.rmtree(dst)
-
     def debrand(self):
+        """Apply debranding rules"""
+        #search for applicable rules
+
+        cp = ConfigParser.RawConfigParser()
+        for name in 'altsrc-global', self.package:
+            cfile = os.path.join(self.options.config['rulesdir'])
+            if not os.access(cfile, os.F_OK):
+                continue
+            self.logger.info('Loading rules from %s', cfile)
+            cp.read(cfile)
+
+        # order rules
+        rules = []
+        for section in cp.sections():
+            parts = section.split(None, 1)
+            if len(parts) < 2:
+                continue
+            rtype, key = parts
+            rules.append((key, rtype, section))
+        rules.sort()
+
+        # apply rules
+        for key, rtype, section in rules:
+            handler = 'rule_handler_%s' % rtype
+            if not hasattr(self, handler):
+                die("No handler for rule type %s" % rtype)
+            data = dict(cp.items(section))
+            if 'on_package' in data:
+                patterns = data['on_package'].split()
+                if not koji.util.multi_fnmatch(self.package, patterns):
+                    self.logger.debug('Skipping rule due to package filter: %s', section)
+                    continue
+            if 'on_version' in data:
+                patterns = data['on_version'].split()
+                if not koji.util.multi_fnmatch(self.version, patterns):
+                    self.logger.debug('Skipping rule due to version filter: %s', section)
+                    continue
+            self.logger.info("Applying rule %s", section)
+            getattr(self, handler)(data)
+            # TODO - check result
+
+        #TODO - commit changes
+
+    def rule_handler_spec(self, data):
+        # TODO
         pass
-        #TODO
+
+    def rule_handler_re(self, data):
+        # TODO
+        pass
+
+    def rule_handler_patch(self, data):
+        # TODO
+        pass
+
+    def rule_handler_source(self, data):
+        # TODO
+        pass
+
+    def clear_checkout(self):
+        """Remove our temporary checkout"""
+        koji.util.rmtree(self.checkout)
 
 
     def notify(self):
@@ -302,7 +373,6 @@ def setup_logging(options):
     if lvl is None:
         die("Invalid log level: %s" % options.config['log_level'])
     logger.setLevel(lvl)
-    # TODO - log file?
     # TODO - setup koji's logger?
 
 
