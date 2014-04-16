@@ -60,6 +60,7 @@ config_defaults = {
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
     'whitelist' : '',
     'blacklist' : '',
+    'changelog_user' : 'sources@centos.org',
 }
 
 config_int_opts = set()
@@ -241,6 +242,24 @@ class Stager(object):
         proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
+
+    def find_spec(self):
+        """Locate specfile in checkout"""
+        specdir = os.path.join(self.checkout, 'SPECS')
+
+        #first look for $package.spec
+        path = os.path.join(specdir, self.package + '.spec')
+        if os.path.isfile(path):
+            return path
+
+        #otherwise
+        for fn in os.listdir(specdir):
+            if fn.endswith('.spec'):
+                return os.path.join(specdir, fn)
+
+        die('No spec file in checkout: %s' % self.checkout)
+
+
     def debrand(self):
         """Apply debranding rules"""
         #search for applicable rules
@@ -263,12 +282,19 @@ class Stager(object):
             rules.append((key, rtype, section))
         rules.sort()
 
+        spec = rpmpatch.SpecFile(self.find_spec(), self.options.config['changelog_user'])
+
         # apply rules
         for key, rtype, section in rules:
             handler = 'rule_handler_%s' % rtype
             if not hasattr(self, handler):
                 die("No handler for rule type %s" % rtype)
             data = dict(cp.items(section))
+            if 'enabled' in data:
+                enabled = data['enabled'].lower().strip()
+                if enabled in ('no', 'false', '0'):
+                    self.logger.info('Skipping disabled rule: %s', section)
+                    continue
             if 'on_package' in data:
                 patterns = data['on_package'].split()
                 if not koji.util.multi_fnmatch(self.package, patterns):
@@ -279,31 +305,74 @@ class Stager(object):
                 if not koji.util.multi_fnmatch(self.version, patterns):
                     self.logger.debug('Skipping rule due to version filter: %s', section)
                     continue
+            if 'on_branch' in data:
+                patterns = data['on_branch'].split()
+                if not koji.util.multi_fnmatch(self.options.branch, patterns):
+                    self.logger.debug('Skipping rule due to branch filter: %s', section)
+                    continue
             self.logger.info("Applying rule: %s", section)
-            getattr(self, handler)(data)
+            getattr(self, handler)(spec, data)
             # TODO - check result
 
         #TODO - commit changes
 
-    def rule_handler_spec(self, data):
-        # TODO
-        pass
+    def rule_handler_spec(self, spec, data):
+        """Patch the spec file"""
 
-    def rule_handler_re(self, data):
-        # TODO
-        pass
+        changelog = data.get('changelog')
+        fn = data['patch']
+        patch = os.path.join(self.options.config['rulesdir'], fn)
+        spec.apply_specfile_diff(patch, changelog)
 
-    def rule_handler_patch(self, data):
-        # TODO
-        pass
+    def rule_handler_re(self, spec, data):
+        """Apply a regex substitution to the spec file"""
 
-    def rule_handler_source(self, data):
-        # TODO
-        pass
+        changelog = data.get('changelog')
+        spec.run_re(data['match'], data['replace'], changelog)
+
+    def rule_handler_patch(self, spec, data):
+        """Add or remove a patch in the spec file"""
+
+        method = data['method'].lower()
+        changelog = data.get('changelog')
+        num = data.get('num')
+        if method == 'add':
+            name = data['patch']
+            stripe = data['stripe']
+            specfile.add_patch(name, stripe, num, changelog)
+
+        elif method == 'del':
+            if 'patch' in data:
+                name = os.path.basename(data['patch'])
+            else:
+                name = None
+
+            # XXX I guess this is a common rpmpatch config typo?
+            if num == name:
+                die('Bad patch section in config')
+
+            return specfile.rm_patch(name, num, changelog)
+
+
+    def rule_handler_source(self, spec, data):
+        """Add a source to the specfile"""
+
+        changelog = data.get('changelog')
+        method = data['method'].lower()
+        num = data.get('num')
+        if method == 'add':
+            thisfile = data['source']
+            specfile.add_source(thisfile, num, changelog)
+
+        #XXX - no other methods??
+        else:
+            die('Bad source section in config file')
+
 
     def clear_checkout(self):
         """Remove our temporary checkout"""
-        koji.util.rmtree(self.checkout)
+        #koji.util.rmtree(self.checkout)
+        pass #XXX
 
 
     def notify(self):
