@@ -247,7 +247,7 @@ class Stager(object):
 
         cp = ConfigParser.RawConfigParser()
         for name in 'altsrc-global', self.package:
-            cfile = os.path.join(self.options.config['rulesdir'])
+            cfile = os.path.join(self.options.config['rulesdir'], name + '.cfg')
             if not os.access(cfile, os.F_OK):
                 continue
             self.logger.info('Loading rules from %s', cfile)
@@ -279,7 +279,7 @@ class Stager(object):
                 if not koji.util.multi_fnmatch(self.version, patterns):
                     self.logger.debug('Skipping rule due to version filter: %s', section)
                     continue
-            self.logger.info("Applying rule %s", section)
+            self.logger.info("Applying rule: %s", section)
             getattr(self, handler)(data)
             # TODO - check result
 
