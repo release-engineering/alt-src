@@ -115,6 +115,7 @@ class SpecFile(object):
         '''
             Read in the specfile and setup our environment
         '''
+        self.logger = logging.getLogger("altsrc")
         self.specfile = specfile
 
         self.changelog_user = changelog_user
@@ -227,6 +228,7 @@ class SpecFile(object):
         patchname = os.path.basename(patchfile)
         if os.path.isfile(self.basedir + '/../SOURCES/' + patchname):
             os.remove(self.basedir + '/../SOURCES/' + patchname)
+        self.logger.debug("Copy %s -> %s", patchfile, self.sourcesdir)
         shutil.copy2(patchfile, self.sourcesdir)
         entry = "\nPatch" + str(patchnum) + ":\t" + patchname
 
@@ -317,6 +319,7 @@ class SpecFile(object):
         sourcename = os.path.basename(sourcefile)
         if os.path.isfile(self.basedir + '/../SOURCES/' + sourcename):
             os.remove(self.basedir + '/../SOURCES/' + sourcename)
+        self.logger.debug("Copy %s -> %s", sourcefile, self.sourcesdir)
         shutil.copy2(sourcefile, self.sourcesdir)
         entry = "\nSource" + str(sourcenum) + ":\t" + sourcename
 
