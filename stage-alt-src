@@ -133,7 +133,7 @@ class SpecFile(object):
         self.sourcesdir = os.path.abspath(basedir + '/../SOURCES/')
         if os.path.isfile(self.sourcesdir + '/' + self.specfile):
             os.remove(self.sourcesdir + '/' + self.specfile)
-        shutil.copy2(self.specfile, self.sourcesdir)
+        #shutil.copy2(self.specfile, self.sourcesdir)
 
     def __del__(self):
         '''
@@ -578,7 +578,19 @@ class Stager(object):
             getattr(self, handler)(data)
             # TODO - check result
 
-        #TODO - commit changes
+        # add and commit changes
+        logname = os.path.join(self.workdir, 'debrand.log')
+        #XXX need to unify some of these log files
+        fo = file(logname, 'wb')
+
+        cmd = ['git', 'add', '-A', '.']
+        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+        cmd = ['git', 'commit', '-m', 'debranding changes']
+        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
 
     def rule_handler_spec(self, data):
         """Patch the spec file"""
