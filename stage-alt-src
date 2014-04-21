@@ -443,9 +443,22 @@ class Stager(object):
         koji.ensuredir(dirname)
         self.workdir = dirname
 
+
     def sync_repo(self):
-        # TODO
-        pass
+        """Sync the primary (bare) git repo from the master"""
+
+        logname = os.path.join(self.workdir, 'sync.log')
+        fo = file(logname, 'wb')
+        repo = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
+        self.logger.info('Syncing primary repo: %s', repo)
+
+        # We assume this repo was generated with clone --mirror
+        cmd = ['git', 'fetch', '-v', 'origin']
+        proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc.wait() and die("command failed: %r" % cmd)
+
+        # TODO - add sanity checks
+
 
     def clone_repo(self):
         """Clone master repo into working directory"""
