@@ -453,9 +453,8 @@ class Stager(object):
         repo = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
         self.logger.info('Syncing primary repo: %s', repo)
 
-        # We assume this repo was generated with clone --mirror
-        cmd = ['git', 'fetch', '-v', 'origin']
-        proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        cmd = ['git', 'fetch', '-v', 'origin', '+refs/*:refs/*']
+        proc = subprocess.Popen(cmd, cwd=repo, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
         # TODO - add sanity checks
