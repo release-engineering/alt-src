@@ -454,6 +454,7 @@ class Stager(object):
         self.logger.info('Syncing primary repo: %s', repo)
 
         cmd = ['git', 'fetch', '-v', 'origin', '+refs/*:refs/*']
+        # XXX - should we drop the + in the refspec? (forces operation)
         proc = subprocess.Popen(cmd, cwd=repo, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
