@@ -390,6 +390,7 @@ class Stager(object):
         self.debrand()
         self.clear_checkout()
         self.notify()
+        #TODO - write runtime data to workdir so publication script knows what to do
 
     def read_srpm(self):
         self.logger.info('Reading source rpm: %s', self.srpm)
@@ -467,8 +468,7 @@ class Stager(object):
         src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
         dst = os.path.join(self.workdir, "%s.git" % self.package)
         self.logger.info('Cloning primary %s repo from %s', self.package, src)
-        cmd = ['git', 'clone', '--shared', '--bare', '-v', src, dst]
-        # is --shared ok for us?
+        cmd = ['git', 'clone', '--local', '--bare', '-v', src, dst]
         # TODO - template? git config?
         # TODO - committer data?
         proc = subprocess.Popen(cmd, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
