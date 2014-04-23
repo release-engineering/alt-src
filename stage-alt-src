@@ -2,6 +2,7 @@
 
 import ConfigParser
 import datetime
+import hashlib
 import logging
 import koji
 from optparse import OptionParser
@@ -493,35 +494,120 @@ class Stager(object):
         #switch branch
         self.logger.info('Switching to branch %s', self.options.branch)
         #TODO - smarter sanity checks
+        #TODO - handle case where branch does not exist yet
         cmd = ['git', 'checkout', self.options.branch]
         #XXX - should be more paranoid here
         proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
+
+    # file extensions that are automatically placed in lookaside
+    # (should all be lower case)
+    UPLOAD_EXTS = [
+        'tar', 'gz', 'bz2', 'lzma', 'xz', 'z', 'zip', 'tff',
+        'bin', 'tbz', 'tbz2', 'tgz', 'tlz', 'txz', 'pdf', 'rpm',
+        'jar', 'war', 'db', 'cpio', 'jisp', 'egg', 'gem', 'iso',
+        ]
+
+    # file extensions that are automatically included in repo
+    # (should all be lower case)
+    INCLUDE_EXTS = [
+        'spec', 'patch', 'diff',
+        'html', 'txt', 'init', 'conf', 'sh',
+        ]
+
     def import_srpm(self):
         """Import our srpm on the specified branch"""
 
         logname = os.path.join(self.workdir, 'import.log')
-        fo = file(logname, 'wb')
+        log = file(logname, 'wb')
 
         #explode our srpm
         dst = self.checkout
         wipe_git_dir(dst)
-        explode_srpm(self.srpm, dst, logfile=fo)
+        explode_srpm(self.srpm, dst, logfile=log)
+
+        #figure out which sources go to the lookaside
+        #XXX - this lookaside stuff should live elsewhere
+        to_move = []
+        sourcedir = os.path.join(dst, 'SOURCES')
+        for fn in os.listdir(sourcedir):
+            # there are varying heuristics for what to place in the lookaside
+            # Fedora/pyrpkg decides based on extension
+            # Centos/nazar decides based on output of the file utility
+            # We're using a hybrid approach
+            ext = fn.rsplit('.')[-1].lower()
+            if ext in self.INCLUDE_EXTS:
+                continue
+            if ext in self.UPLOAD_EXTS:
+                to_move.append(fn)
+                continue
+            path = os.path.join(sourcedir, fn)
+            st = os.stat(path)
+            if st.st_size < 1024:
+                # the UPLOAD_EXTS check should catch most of what we want in
+                # the lookaside, so we'll just include anything small
+                continue
+            #lastly, see what the file utility says
+            cmd = ['file', '--brief' ]
+            # XXX should we use --mime instead?
+            proc = subprocess.Popen(cmd, cwd=dst, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+            output = proc.communicate()[0]
+            if proc.wait():
+                #nonfatal
+                self.logger.warn("command failed: %r" % cmd)
+                continue
+            self.logger.debug("Source file %s: %s", fn, output)
+            if output.find('text') == -1:
+                #does not appear to be text
+                to_move.append(fn)
+
+        # move files to lookaside
+        if to_move:
+            meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
+        for fn in to_move:
+            path = os.path.join(sourcedir, fn)
+            csum = hashlib.sha1()
+            # XXX should we move to something stronger?
+            fo = file(path, 'rb')
+            chunk = 'IGNORE ME!'
+            while chunk:
+                chunk = fo.read(8192)
+                csum.update(chunk)
+            fo.close()
+            digest = csum.hexdigest()
+            dirname = os.path.join(self.options.config['lookaside'], self.package, self.options.branch)
+            # XXX - using Centos/nazar path for now, may need to change
+            lpath = os.path.join(dirname, digest)
+            if not os.path.isfile(lpath):
+                koji.ensuredir(dirname)
+                self.logger.info('Copying source file to lookaside: %s -> %s', fn, lpath)
+                os.rename(path, lpath)
+            else:
+                # we appear to already have it
+                st1 = os.stat(path)
+                st2 = os.stat(lpath)
+                if st1.st_size != st2.st_size:
+                    self.logger.error("Possibly corrupt lookaside entry: %s", lpath)
+                    self.logger.error("Size: %s, but current matching source is %s", st1.st_size, st2.st_size)
+                    die("Lookaside size mismatch")
+                # TODO - more sanity checks
+                self.logger.info('Skipping source, already in digest: %s', fn)
+                os.unlink(path)
+            meta.write("%s %s\n" % (digest, fn))
 
         cmd = ['git', 'add', '-A', '.']
-        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=log, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
-        #TODO - deal with lookaside
 
         cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
-        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=log, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
         #push back to our bare git directory
         cmd = ['git', 'push', 'origin', self.options.branch]
-        proc = subprocess.Popen(cmd, cwd=dst, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=log, stderr=subprocess.STDOUT, close_fds=True)
         proc.wait() and die("command failed: %r" % cmd)
 
 
