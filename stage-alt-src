@@ -460,6 +460,7 @@ class Stager(object):
         proc.wait() and die("command failed: %r" % cmd)
 
         # TODO - add sanity checks
+        # TODO - deal with new package case (no existing repo)
 
 
     def clone_repo(self):
@@ -565,6 +566,7 @@ class Stager(object):
         # move files to lookaside
         if to_move:
             meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
+            gitignore = file(os.path.join(dst, ".gitignore"), 'w')
         for fn in to_move:
             path = os.path.join(sourcedir, fn)
             csum = hashlib.sha1()
@@ -594,7 +596,13 @@ class Stager(object):
                 # TODO - more sanity checks
                 self.logger.info('Skipping source, already in digest: %s', fn)
                 os.unlink(path)
+            # write metadata file
             meta.write("%s %s\n" % (digest, fn))
+            # write .gitignore
+            gitignore.write('SOURCES/%s\n' % fn)
+        if to_move:
+            meta.close()
+            gitignore.close()
 
         cmd = ['git', 'add', '-A', '.']
         proc = subprocess.Popen(cmd, cwd=dst, stdout=log, stderr=subprocess.STDOUT, close_fds=True)
