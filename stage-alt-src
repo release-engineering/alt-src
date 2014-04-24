@@ -452,8 +452,12 @@ class Stager(object):
         logname = os.path.join(self.workdir, 'sync.log')
         fo = file(logname, 'wb')
         repo = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
-        self.logger.info('Syncing primary repo: %s', repo)
 
+        if not os.path.exists(repo):
+            self.init_repo()
+            return
+
+        self.logger.info('Syncing primary repo: %s', repo)
         cmd = ['git', 'fetch', '-v', 'origin', '+refs/*:refs/*']
         # XXX - should we drop the + in the refspec? (forces operation)
         proc = subprocess.Popen(cmd, cwd=repo, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
@@ -461,6 +465,12 @@ class Stager(object):
 
         # TODO - add sanity checks
         # TODO - deal with new package case (no existing repo)
+
+
+    def init_repo(self):
+        """Initialize a new repo"""
+        pass
+        #TODO
 
 
     def clone_repo(self):
