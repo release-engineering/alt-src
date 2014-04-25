@@ -560,13 +560,14 @@ class Stager(object):
                 # the lookaside, so we'll just include anything small
                 continue
             #lastly, see what the file utility says
-            cmd = ['file', '--brief' ]
+            cmd = ['file', '--brief', path]
             # XXX should we use --mime instead?
             proc = subprocess.Popen(cmd, cwd=dst, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
             output = proc.communicate()[0]
             if proc.wait():
                 #nonfatal
                 self.logger.warn("command failed: %r" % cmd)
+                self.logger.warn("output was: %r" % output)
                 continue
             self.logger.debug("Source file %s: %s", fn, output)
             if output.find('text') == -1:
