@@ -718,17 +718,11 @@ class Stager(object):
             # TODO - check result
 
         # add and commit changes
-        logname = os.path.join(self.workdir, 'debrand.log')
-        #XXX need to unify some of these log files
-        fo = file(logname, 'wb')
-
         cmd = ['git', 'add', '-A', '.']
-        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
-        proc.wait() and die("command failed: %r" % cmd)
+        self.log_cmd(cmd, cwd=self.checkout)
 
         cmd = ['git', 'commit', '-m', 'debranding changes']
-        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
-        proc.wait() and die("command failed: %r" % cmd)
+        self.log_cmd(cmd, cwd=self.checkout)
 
 
     def rule_handler_spec(self, data):
@@ -798,15 +792,8 @@ class Stager(object):
         if not os.path.isfile(script):
             die('Script missing: %s' % script)
 
-        logname = os.path.join(self.workdir, 'scripts.log')
-        # using the same log for all the configured scripts
-        fo = file(logname, 'ab')
         cmd = [script, self.workdir, self.find_spec()]
-        fo.write("Running %s\n" % ' '.join(cmd))
-        fo.flush()
-        proc = subprocess.Popen(cmd, cwd=self.workdir, stdout=fo, stderr=subprocess.STDOUT, close_fds=True)
-        proc.wait() and die("command failed: %r" % cmd)
-        fo.close()
+        self.log_cmd(cmd, cwd=self.workdir)
 
     def clear_checkout(self):
         """Remove our temporary checkout"""
