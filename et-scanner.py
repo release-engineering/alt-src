@@ -6,6 +6,8 @@ import kerberos
 import logging
 import os
 import os.path
+import pdb
+import pprint
 import re
 import requests
 import socket
@@ -13,8 +15,8 @@ import sys
 import subprocess
 import tempfile
 import time
+import traceback
 from optparse import OptionParser
-from pprint import pprint
 
 try:
     import json
@@ -70,9 +72,11 @@ config_defaults = {
     'log_file' : None,
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
     'cacert' : None,
+    'cachefile' : '/var/cache/et-scan/advisories',
+    'errata_filter' : 441,
 }
 
-config_int_opts = set()
+config_int_opts = set(['errata_filter'])
 config_bool_opts = set()
 
 def get_config(cfile, overrides):
@@ -218,34 +222,118 @@ class KerberizedJSON(object):
         raise
 
 
-def get_errata_json():
-    #cacert = os.path.dirname(os.path.abspath(sys.argv[0])) + \
-    #    '/certs/redhat-is-ca.crt'
-    return KerberizedJSON('errata.devel.redhat.com', cacert=options.config['cacert'])
+class ErrataScanner(object):
+
+    def __init__(self, options):
+        self.options = options
+        self.logger = logging.getLogger("etscan")
+        self.logger.debug("Config: %s", pprint.pformat(options.config))
+        self.rpc = KerberizedJSON('errata.devel.redhat.com', cacert=options.config['cacert'])
+
+    def run(self):
+        self.read_cache()
+        self.read_advisories()
+        self.read_builds()
+        self.stage_builds()
+        self.write_cache()
+
+    def read_cache(self):
+        self.cache = {'builds': [], 'advisories' : {}}
+        cache = self.options.config['cachefile']
+        if not os.path.exists(cache):
+            self.logger.info('Cache file missing: %s', cache)
+            return
+        self.logger.info('Reading cache file: %s', cache)
+        try:
+            self.cache = json.load(file(cache))
+        except Exception, e:
+            exc = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
+            self.logger.error(exc)
+            self.logger.error('Unable to load cache file')
+
+    def read_advisories(self):
+        data = self.rpc.get('/filter/%i.json' % self.options.config['errata_filter']).content
+        #XXX default 441 filter is owned by mikem, need a better way to specify our parameters
+        self.logger.info('Loaded %i advisories', len(data))
+        self.advisories = dict([(d['id'], d) for d in data])
+
+    def adv_changed(self, adv):
+        last = self.cache['advisories'].get(str(adv['id']))
+        if not last:
+            self.logger.debug('No cache for advisory: %(id)s', adv)
+            return True
+        if adv['revision'] != last['revision']:
+            self.logger.debug('Revision changed for advisory %s, %s -> %s', adv['id'], last['revision'], adv['revision'])
+            return True
+        if last['timestamps']['status_time'] is None:
+            self.logger.debug('No previous status time for %(id)s', adv)
+            return True
+        if adv['status'] != last['status']:
+            self.logger.debug('Status changed for %s: %s -> %s', adv['id'], last['status'], adv['status'])
+            return True
+        if adv['timestamps']['status_time'] > last['timestamps']['status_time']:
+            # errata tool returns timestamps in a sort stable string format
+            # e.g. 2014-04-17T03:00:13Z
+            self.logger.debug('Status time changed for %(id)s', adv)
+            return True
+        #otherwise
+        return False
+
+    def read_builds(self):
+        builds = set()
+        for adv_id in self.advisories:
+            adv = self.advisories[adv_id]
+            # TODO apply filtering rules
+            if not self.adv_changed(adv):
+                self.logger.info('Skipping unchanged advisory: %(id)s', adv)
+                continue
+            bdata = self.rpc.get('/advisory/%(id)s/builds' % adv).content
+            if len(bdata) > 1:
+                pprint.pprint(bdata)
+            for chan in bdata:
+                # XXX not sure if this value really maps to a channel or not, but it seems to be channel-ish
+                for entry in bdata[chan]:
+                    #each entry is a single entry dictionary with the build nvr as the key
+                    for nvr in entry:
+                        builds.add(nvr)
+        self.builds = builds
+
+
+    def stage_builds(self):
+        last = self.cache['builds']
+        last = set(last)
+        staged = []
+        for nvr in self.builds:
+            if nvr in last:
+                self.logger.info('Skipping already seen build: %s', nvr)
+            self.logger.info('Staging build: %s', nvr)
+            # TODO: actually run staging script
+            # TODO: check for errors
+            staged.append(nvr)
+        self.staged = staged
+
+    def write_cache(self):
+        fn = self.options.config['cachefile']
+        cache = {}
+        cache['advisories'] = self.advisories
+        builds = self.cache['builds']
+        builds.extend(self.staged)
+        cache['builds'] = builds
+        self.logger.info('Writing cache file: %s', fn)
+        try:
+            fo = file(fn, 'w')
+            self.cache = json.dump(cache, fo, indent=2)
+            fo.close()
+        except Exception, e:
+            exc = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
+            self.logger.error(exc)
+            self.logger.error('Unable to write cache file')
 
 
 def main():
-    logger = logging.getLogger("etscan")
-    #XXX just test code here
-    json_server = get_errata_json()
-
-    argv = options.args
-    if len(argv) > 1:
-        for advisory in argv[1:]:
-            logger.info('Querying advisory: %s', advisory)
-            advisory_info = json_server.get('/advisory/%s' % advisory).content
-            pprint(advisory_info)
-            advisory_builds = json_server.get('/advisory/%s/builds' % advisory).content
-            pprint(advisory_builds)
-            release_info = json_server.get('/release/show/%s' % advisory_info['release']['id']).content
-            pprint(release_info)
-            product_info = json_server.get('/products/%s.json' % advisory_info['product']['id']).content
-            pprint(product_info)
-    else:
-        logger.info('Querying all advisories')
-        advisories = json_server.get('/errata?format=json').content
-        pprint(advisories)
-        logger.info('Got %i advisories', len(advisories))
+    #pdb.set_trace()
+    scanner = ErrataScanner(options)
+    scanner.run()
 
 
 if __name__ == '__main__':
