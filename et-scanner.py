@@ -3,6 +3,7 @@
 import ConfigParser
 import datetime
 import kerberos
+import koji
 import logging
 import os
 import os.path
@@ -42,7 +43,7 @@ def _(args):
 def get_options():
     """process options from command line"""
 
-    usage = _("%prog [options] branch srpm")
+    usage = _("%prog [options]")
     parser = OptionParser(usage=usage)
     parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
                       help=_("use alternate configuration file"), metavar="FILE")
@@ -58,8 +59,10 @@ def get_options():
                       help=_("set config option"))
     (options, args) = parser.parse_args()
 
-    options.args = args
-    # TODO: process args here?
+    if args:
+        parser.print_help()
+        print
+        die("Error: This script takes no arguments. ")
 
     options.config = get_config(options.cfile, options.copts)
 
@@ -74,6 +77,11 @@ config_defaults = {
     'cacert' : None,
     'cachefile' : '/var/cache/et-scan/advisories',
     'errata_filter' : 441,
+    'product_whitelist' : '',
+    'product_blacklist' : '',
+    'release_whitelist' : '',
+    'release_blacklist' : '',
+    'max_retries' : 3,
 }
 
 config_int_opts = set(['errata_filter'])
@@ -228,7 +236,8 @@ class ErrataScanner(object):
         self.options = options
         self.logger = logging.getLogger("etscan")
         self.logger.debug("Config: %s", pprint.pformat(options.config))
-        self.rpc = KerberizedJSON('errata.devel.redhat.com', cacert=options.config['cacert'])
+        self.rpc = KerberizedJSON('errata.devel.redhat.com', cacert=options.config['cacert'],
+                    max_retries=options.config['max_retries'])
 
     def run(self):
         self.read_cache()
@@ -279,17 +288,32 @@ class ErrataScanner(object):
         #otherwise
         return False
 
+    def log_advisory(self, adv):
+        self.logger.debug("Advisory %(id)s: %(advisory_name)s: %(synopsis)s", adv)
+        self.logger.debug("  Product: %s, Release: %s, Status: %s",
+                    adv['product']['short_name'], adv['release']['name'], adv['status'])
+
     def read_builds(self):
         builds = set()
         for adv_id in self.advisories:
             adv = self.advisories[adv_id]
+            if self.logger.isEnabledFor(logging.DEBUG):
+                self.log_advisory(adv)
             # TODO apply filtering rules
+            if self.check_advisory_filters(adv):
+                self.logger.info('Skipping advisory due to filters: %(id)s', adv)
+                continue
             if not self.adv_changed(adv):
                 self.logger.info('Skipping unchanged advisory: %(id)s', adv)
                 continue
-            bdata = self.rpc.get('/advisory/%(id)s/builds' % adv).content
-            if len(bdata) > 1:
-                pprint.pprint(bdata)
+            try:
+                bdata = self.rpc.get('/advisory/%(id)s/builds' % adv).content
+            except:
+                logger.error("Unable to read builds for advisory %(id)s", adv)
+                # don't let one error keep us from the rest of the advisories
+                continue
+            #if len(bdata) > 1:
+            #    pprint.pprint(bdata)
             for chan in bdata:
                 # XXX not sure if this value really maps to a channel or not, but it seems to be channel-ish
                 for entry in bdata[chan]:
@@ -298,6 +322,39 @@ class ErrataScanner(object):
                         builds.add(nvr)
         self.builds = builds
 
+    def check_advisory_filters(self, adv):
+        """Check filters. Return True if we should skip the advisory"""
+        if self.check_product_filters(adv):
+            return True
+        elif self.check_release_filters(adv):
+            return True
+        # TODO more filters?
+        #otherwise
+        return False
+
+    def check_product_filters(self, adv):
+        product = adv['product']['short_name']
+        # XXX should we also match the full name?
+        whitelist = self.options.config['product_whitelist'].split()
+        blacklist = self.options.config['product_blacklist'].split()
+        return self.check_wblist(product, whitelist, blacklist)
+
+    def check_release_filters(self, adv):
+        release = adv['release']['name']
+        whitelist = self.options.config['release_whitelist'].split()
+        blacklist = self.options.config['release_blacklist'].split()
+        return self.check_wblist(release, whitelist, blacklist)
+
+    def check_wblist(self, name, whitelist=[], blacklist=[]):
+        if whitelist:
+            whitelisted = koji.util.multi_fnmatch(name, whitelist)
+        else:
+            whitelisted = False
+        if not whitelisted:
+            if blacklist and koji.util.multi_fnmatch(name, blacklist):
+                return True
+        #otherwise
+        return False
 
     def stage_builds(self):
         last = self.cache['builds']
