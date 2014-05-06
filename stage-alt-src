@@ -11,9 +11,11 @@ import os.path
 import re
 import rpm
 import shutil
+import smtplib
 import subprocess
 import sys
 import tempfile
+import traceback
 
 
 
@@ -65,10 +67,15 @@ config_defaults = {
     'whitelist' : '',
     'blacklist' : '',
     'changelog_user' : 'sources@centos.org',
+    'smtp_enabled' : True,
+    'smtp_host' : 'localhost',
+    #'smtp_host' : 'smtp.corp.redhat.com',
+    'smtp_from' : 'Alt Source Stager <altsrc@redhat.com>',
+    'smtp_to' : 'mike',
 }
 
-config_int_opts = set()
-config_bool_opts = set()
+config_int_opts = set([])
+config_bool_opts = set(['smtp_enabled'])
 
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
@@ -370,6 +377,29 @@ class SpecFile(object):
         return True
 
 
+class StageError(Exception):
+    """Our base error class"""
+    pass
+
+class StartupError(StageError):
+    """Raised when an error happens very early"""
+    pass
+
+class CommandError(StageError):
+    """Raised when a command we run fails"""
+
+class FilterError(StageError):
+    pass
+
+class SanityError(StageError):
+    pass
+
+class ConfigError(StageError):
+    pass
+
+
+
+
 class Stager(object):
 
     def __init__(self, options):
@@ -378,7 +408,7 @@ class Stager(object):
         self.srpm = options.source
         #TODO - support pulling srpm from Brew
         if not os.path.isfile(self.srpm):
-            die("No such file: %s", self.srpm)
+            raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
 
     def run(self):
@@ -413,7 +443,7 @@ class Stager(object):
         if ret:
             self.logger.error("Command failed: %r" % cmd)
             if fatal:
-                die("command failed: %r" % cmd)
+                raise CommandError, "command failed: %r" % cmd
         return ret
 
 
@@ -422,7 +452,7 @@ class Stager(object):
         h = koji.get_rpm_header(self.srpm)
         self.headers = h
         if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
-            die("%s is not a source package" % self.srpm)
+            raise InputError, "%s is not a source package" % self.srpm
         data = koji.get_header_fields(h, ['name','version','release'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
@@ -439,7 +469,7 @@ class Stager(object):
         if not whitelisted:
             blacklist = self.options.config['blacklist'].split()
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
-                die('Blacklisted package: %s' % self.package)
+                raise FilterError, 'Blacklisted package: %s' % self.package
 
     def make_workdir(self):
         dirname = os.path.join(self.options.config['stagedir'], self.nvr)
@@ -455,7 +485,7 @@ class Stager(object):
         dirname = os.path.join(*parts)
         self.logger.info('Creating working directory: %s', dirname)
         if os.path.islink(dirname):
-            die("%s is a symlink" % dirname)
+            raise SanityError, "%s is a symlink" % dirname
         elif os.path.isdir(dirname):
             # TODO - more sanity checks
             if self.options.force:
@@ -463,9 +493,9 @@ class Stager(object):
                 # TODO - back up first
                 koji.util.rmtree(dirname)
             else:
-                die("Work directory %s directory exists, use --force to overwrite." % dirname)
+                raise SanityError, "Work directory %s directory exists, use --force to overwrite." % dirname
         elif os.path.exists(dirname):
-            die("%s exists and is not a directory" % dirname)
+            raise SanityError, "%s exists and is not a directory" % dirname
         koji.ensuredir(dirname)
         self.workdir = dirname
 
@@ -624,7 +654,7 @@ class Stager(object):
                 if st1.st_size != st2.st_size:
                     self.logger.error("Possibly corrupt lookaside entry: %s", lpath)
                     self.logger.error("Size: %s, but current matching source is %s", st1.st_size, st2.st_size)
-                    die("Lookaside size mismatch")
+                    raise SanityError, "Lookaside size mismatch"
                 # TODO - more sanity checks
                 self.logger.info('Skipping source, already in digest: %s', fn)
                 os.unlink(path)
@@ -662,7 +692,7 @@ class Stager(object):
             if fn.endswith('.spec'):
                 return os.path.join(specdir, fn)
 
-        die('No spec file in checkout: %s' % self.checkout)
+        raise SanityError, 'No spec file in checkout: %s' % self.checkout
 
 
     def debrand(self):
@@ -691,7 +721,7 @@ class Stager(object):
         for key, rtype, section in rules:
             handler = 'rule_handler_%s' % rtype
             if not hasattr(self, handler):
-                die("No handler for rule type %s" % rtype)
+                raise ConfigError, "No handler for rule type %s" % rtype
             data = dict(cp.items(section))
             if 'enabled' in data:
                 enabled = data['enabled'].lower().strip()
@@ -764,7 +794,7 @@ class Stager(object):
 
             # XXX I guess this is a common rpmpatch config typo?
             if num == name:
-                die('Bad patch section in config')
+                raise ConfigError, 'Bad patch section in config'
 
             return spec.rm_patch(name, num, changelog)
 
@@ -783,14 +813,14 @@ class Stager(object):
 
         #XXX - no other methods??
         else:
-            die('Bad source section in config file')
+            raise ConfigError, 'Bad source section in config file'
 
     def rule_handler_script(self, data):
         """Run an arbitary script"""
         fn = data['script']
         script = os.path.join(self.options.config['rulesdir'], fn)
         if not os.path.isfile(script):
-            die('Script missing: %s' % script)
+            raise ConfigError, 'Script missing: %s' % script
 
         cmd = [script, self.workdir, self.find_spec()]
         self.log_cmd(cmd, cwd=self.workdir)
@@ -805,6 +835,45 @@ class Stager(object):
         pass
         #TODO
 
+    def handle_error(self):
+        """Handle an exception. Called from top level."""
+        tb = ''.join(traceback.format_exception(*sys.exc_info()))
+        self.logger.exception('Staging failed')
+        cls, err = sys.exc_info()[:2]
+        msg = ''.join(traceback.format_exception_only(cls, err))
+        self.notify_error(err, msg)
+
+    def notify_error(self, err, msg):
+        if not self.options.config['smtp_enabled']:
+            self.logger.warning("SMTP disabled. Skipping error notifications.")
+            return
+        self.logger.warning("Sending error email")
+        nvr = self.nvr or "UNKNOWN"
+        package = self.package or "UNKNOWN"
+        headers = [
+            ('From', self.options.config['smtp_from']),
+            ('Subject', 'Error staging package %s' % nvr),
+            ('To', self.options.config['smtp_to']),
+            ('X-altsrc-package', package),
+        ]
+        body = """\
+An error was encountered staging the source for %(nvr)s.
+
+The error was:
+%(msg)s
+"""
+        body = body % locals()
+        #TODO : be more informative
+        #TODO : also log full traceback
+
+        head = "\n".join(["%s: %s" % (k,v) for k,v in headers])
+        message = "%s\n\n%s" % (head, body)
+        message.replace('\n', '\r\n')
+        message = koji.fixEncoding(message)
+        server = smtplib.SMTP(self.options.config['smtp_host'])
+        server.sendmail(self.options.config['smtp_from'], self.options.config['smtp_to'], message)
+        server.quit()
+
 
 def explode_srpm(srpm, destdir=None, logfile=None):
     # explode our srpm to the given directory
@@ -812,7 +881,7 @@ def explode_srpm(srpm, destdir=None, logfile=None):
     if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
         # we checked this earlier, but since we're about to rpm -i it,
         # let's check again
-        die("%s is not a source package" % srpm)
+        raise SanityError, "%s is not a source package" % srpm
     if destdir is None:
         destdir = os.getcwd()
     else:
@@ -827,7 +896,7 @@ def explode_srpm(srpm, destdir=None, logfile=None):
     proc = subprocess.Popen(cmd, **popts)
     ret = proc.wait()
     if ret:
-        die("command failed: %r" % cmd)
+        raise CommandError, "command failed: %r" % cmd
 
 
 def wipe_git_dir(dirname):
@@ -871,13 +940,25 @@ def setup_logging(options):
         die("Invalid log level: %s" % options.config['log_level'])
     logger.setLevel(lvl)
     # TODO - setup koji's logger?
+    return logger
 
+
+def main():
+    options = get_options()
+    logger = setup_logging(options)
+    stg = Stager(options)
+    try:
+        stg.run()
+    except (SystemExit, KeyboardInterrupt), e:
+        msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
+        logger.warn("Exiting (%s)", msg)
+        sys.exit(1)
+    except Exception:
+        stg.handle_error()
+        sys.exit(2)
+    #TODO - trap errors and notify
 
 if __name__ == '__main__':
-    options = get_options()
-    setup_logging(options)
-    stg = Stager(options)
-    stg.run()
-    #TODO - trap errors and notify
+    main()
 
 # the end
