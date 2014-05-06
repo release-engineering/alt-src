@@ -309,7 +309,9 @@ class ErrataScanner(object):
             try:
                 bdata = self.rpc.get('/advisory/%(id)s/builds' % adv).content
             except:
-                logger.error("Unable to read builds for advisory %(id)s", adv)
+                exc = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
+                self.logger.error(exc)
+                self.logger.error("Unable to read builds for advisory %(id)s", adv)
                 # don't let one error keep us from the rest of the advisories
                 continue
             #if len(bdata) > 1:
