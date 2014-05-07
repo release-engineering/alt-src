@@ -857,7 +857,7 @@ class Stager(object):
             ('X-altsrc-package', package),
         ]
         body = """\
-An error was encountered staging the source for %(nvr)s.
+Staging failed for %(nvr)s.
 
 The error was:
 %(msg)s
@@ -911,8 +911,6 @@ def wipe_git_dir(dirname):
 
 
 def die(msg):
-    # XXX almost every use of this function is a bug
-    # we need to handle errors more carefully
     print msg
     sys.exit(1)
 
@@ -956,7 +954,6 @@ def main():
     except Exception:
         stg.handle_error()
         sys.exit(2)
-    #TODO - trap errors and notify
 
 if __name__ == '__main__':
     main()
