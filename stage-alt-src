@@ -472,8 +472,8 @@ class Stager(object):
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
                 raise FilterError, 'Blacklisted package: %s' % self.package
 
-    def make_workdir(self):
-        dirname = os.path.join(self.options.config['stagedir'], self.nvr)
+
+    def get_workdir(self):
         letter = self.package[0]
         if not letter.isalpha():
             letter = "_"
@@ -483,7 +483,11 @@ class Stager(object):
             self.package,
             self.nvr,
         ]
-        dirname = os.path.join(*parts)
+        return os.path.join(*parts)
+
+
+    def make_workdir(self):
+        dirname = self.get_workdir()
         self.logger.info('Creating working directory: %s', dirname)
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
@@ -510,10 +514,8 @@ class Stager(object):
 
 
     def sync_repo(self):
-        """Sync the primary (bare) git repo from the master"""
+        """Sync the primary (bare) git repo from the (local) master"""
 
-        logname = os.path.join(self.workdir, 'sync.log')
-        fo = file(logname, 'wb')
         repo = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
 
         if not os.path.exists(repo):
@@ -755,6 +757,10 @@ class Stager(object):
         cmd = ['git', 'commit', '-m', 'debranding changes']
         self.log_cmd(cmd, cwd=self.checkout)
 
+        #push back to our bare git directory
+        cmd = ['git', 'push', 'origin', self.options.branch]
+        self.log_cmd(cmd, cwd=self.checkout)
+
 
     def rule_handler_spec(self, data):
         """Patch the spec file"""
@@ -892,6 +898,48 @@ Staging failed for %(nvr)s.
         server = smtplib.SMTP(self.options.config['smtp_host'])
         server.sendmail(self.options.config['smtp_from'], self.options.config['smtp_to'], message)
         server.quit()
+
+
+class Pusher(Stager):
+    #XXX this inheritance is wrong, but for now it is a quick way to get going
+
+    def run(self):
+        self.read_srpm()
+        self.check_package()
+        self.get_workdir()
+        self.setup_logfile()
+        self.sync_repo()
+        #self.clone_repo()
+        #self.setup_checkout()
+        #self.import_srpm()
+        #self.debrand()
+        self.clear_checkout()
+        self.notify()
+
+
+    def check_workdir(self):
+        dirname = self.get_workdir()
+        self.logger.info('Checking working directory: %s', dirname)
+        if os.path.islink(dirname):
+            raise SanityError, "%s is a symlink" % dirname
+        if not os.path.isdir(dirname):
+            # TODO - option to go ahead and stage if needed
+            raise SanityError, "Not staged. No such directory: %s" % dirname
+        self.workdir = dirname
+        # TODO - load info left by stage run
+
+
+    def setup_logfile(self):
+        self.logfile = file(os.path.join(self.workdir, 'push.log'), 'w')
+        handler = logging.StreamHandler(self.logfile)
+        handler.setFormatter(logging.Formatter(self.options.config['log_format']))
+        handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(handler)
+
+
+    def check_repo(self):
+        repo = os.path.join(self.workdir, "%s.git" % self.package)
+
 
 
 
