@@ -44,6 +44,8 @@ def get_options():
                       help=_("show debug output"))
     parser.add_option("--force", action="store_true", default=False,
                       help=_("force operation"))
+    parser.add_option("--push", action="store_true", default=False,
+                      help=_("push staged sources"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
                       help=_("set config option"))
     (options, args) = parser.parse_args()
@@ -423,6 +425,7 @@ class Stager(object):
         self.import_srpm()
         self.debrand()
         self.clear_checkout()
+        self.remake_srpm()
         self.notify()
         #TODO - write runtime data to workdir so publication script knows what to do
 
@@ -566,6 +569,14 @@ class Stager(object):
         #XXX - should be more paranoid here
         self.log_cmd(cmd, cwd=dst)
 
+        #tag our starting point
+        tagname = "altsrc-start-%s" % self.options.branch
+        cmd = ['git', 'tag', tagname, self.options.branch]
+        self.log_cmd(cmd, cwd=self.checkout)
+        #push the tag to the bare repo
+        cmd = ['git', 'push', 'origin', "refs/tags/%s" % tagname]
+        self.log_cmd(cmd, cwd=self.checkout)
+
 
     # file extensions that are automatically placed in lookaside
     # (should all be lower case)
@@ -649,7 +660,7 @@ class Stager(object):
             if not os.path.isfile(lpath):
                 koji.ensuredir(dirname)
                 self.logger.info('Copying source file to lookaside: %s -> %s', fn, lpath)
-                os.rename(path, lpath)
+                shutil.copy2(path, lpath)
             else:
                 # we appear to already have it
                 st1 = os.stat(path)
@@ -660,7 +671,7 @@ class Stager(object):
                     raise SanityError, "Lookaside size mismatch"
                 # TODO - more sanity checks
                 self.logger.info('Skipping source, already in digest: %s', fn)
-                os.unlink(path)
+                #os.unlink(path)
             # write metadata file
             meta.write("%s %s\n" % (digest, fn))
             # write .gitignore
@@ -832,6 +843,16 @@ class Stager(object):
         cmd = [script, self.workdir, self.find_spec()]
         self.log_cmd(cmd, cwd=self.workdir)
 
+    def remake_srpm(self):
+        """Remake the srpm"""
+        # This is mainly a test
+        cmd = ['rpmbuild', '-bs',
+                '--define', '_topdir %s' % self.checkout,
+                '--define', '_srcrpmdir %s' % self.workdir,
+                '--define', 'dist .TEST',
+                self.find_spec()]
+        self.log_cmd(cmd, cwd=self.workdir)
+
     def clear_checkout(self):
         """Remove our temporary checkout"""
         #koji.util.rmtree(self.checkout)
@@ -906,7 +927,7 @@ class Pusher(Stager):
     def run(self):
         self.read_srpm()
         self.check_package()
-        self.get_workdir()
+        self.check_workdir()
         self.setup_logfile()
         self.sync_repo()
         #self.clone_repo()
@@ -1012,15 +1033,18 @@ def setup_logging(options):
 def main():
     options = get_options()
     logger = setup_logging(options)
-    stg = Stager(options)
+    if options.push:
+        task = Pusher(options)
+    else:
+        task = Stager(options)
     try:
-        stg.run()
+        task.run()
     except (SystemExit, KeyboardInterrupt), e:
         msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
         logger.warn("Exiting (%s)", msg)
         sys.exit(1)
     except Exception:
-        stg.handle_error()
+        task.handle_error()
         sys.exit(2)
 
 if __name__ == '__main__':
