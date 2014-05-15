@@ -420,7 +420,6 @@ class Stager(object):
         self.make_workdir()
         self.setup_logfile()
         self.sync_repo()
-        self.clone_repo()
         self.setup_checkout()
         self.import_srpm()
         self.debrand()
@@ -445,9 +444,10 @@ class Stager(object):
         proc = subprocess.Popen(cmd, **kwargs)
         ret = proc.wait()
         if ret:
-            self.logger.error("Command failed: %r" % cmd)
             if fatal:
                 raise CommandError, "command failed: %r" % cmd
+            #otherwise
+            self.logger.warn("Command failed: %r" % cmd)
         return ret
 
 
@@ -527,11 +527,9 @@ class Stager(object):
 
         self.logger.info('Syncing primary repo: %s', repo)
         cmd = ['git', 'fetch', '-v', 'origin', '+refs/*:refs/*']
-        # XXX - should we drop the + in the refspec? (forces operation)
         self.log_cmd(cmd, cwd=repo)
 
         # TODO - add sanity checks
-        # TODO - deal with new package case (no existing repo)
 
 
     def init_repo(self):
@@ -540,41 +538,39 @@ class Stager(object):
         #TODO
 
 
-    def clone_repo(self):
-        """Clone master repo into working directory"""
-        src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
-        dst = os.path.join(self.workdir, "%s.git" % self.package)
-        self.logger.info('Cloning primary %s repo from %s', self.package, src)
-        cmd = ['git', 'clone', '--local', '--bare', '-v', src, dst]
-        # TODO - template? git config?
-        # TODO - committer data?
-        self.log_cmd(cmd, cwd=self.workdir)
-
-
     def setup_checkout(self):
-        """Setup a temporary non-bare checkout to work with"""
+        """Setup our working checkout"""
 
-        src = os.path.join(self.workdir, "%s.git" % self.package)
-        dst = os.path.join(self.workdir, "tmp.%s" % self.package)
+        src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
+        dst = os.path.join(self.workdir, "checkout")
         self.checkout = dst
-        self.logger.info('Setting up temporary checkout: %s', dst)
+        self.logger.info('Setting up working checkout: %s', dst)
         cmd = ['git', 'clone', '--local', '-v', src, dst]
         self.log_cmd(cmd, cwd=self.workdir)
 
-        #switch branch
-        self.logger.info('Switching to branch %s', self.options.branch)
-        #TODO - smarter sanity checks
-        #TODO - handle case where branch does not exist yet
-        cmd = ['git', 'checkout', self.options.branch]
-        #XXX - should be more paranoid here
-        self.log_cmd(cmd, cwd=dst)
+        #create and checkout our staging branch
+        branchname = "altsrc-stage-%s" % self.options.branch
+        self.branchname = branchname
+        base = 'refs/remotes/origin/%s' % self.options.branch
+        self.logger.info('Setting up staging branch: %s', branchname)
+        cmd = ['git', 'show-ref', '--verify', base]
+        rv = self.log_cmd(cmd, cwd=dst, fatal=False)
+        if rv:
+            self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
+            cmd = ['git', 'checkout', '--orphan', branchname]
+            self.log_cmd(cmd, cwd=dst)
+            cmd = ['git', 'rm', '-rf', '.']
+            self.log_cmd(cmd, cwd=dst)
+            # add a commit so we can tag the start point
+            cmd = ['git', 'commit', '--allow-empty', '-m', 'new orphan branch']
+            self.log_cmd(cmd, cwd=dst)
+        else:
+            cmd = ['git', 'checkout', '-b', branchname, base]
+            self.log_cmd(cmd, cwd=dst)
 
         #tag our starting point
         tagname = "altsrc-start-%s" % self.options.branch
-        cmd = ['git', 'tag', tagname, self.options.branch]
-        self.log_cmd(cmd, cwd=self.checkout)
-        #push the tag to the bare repo
-        cmd = ['git', 'push', 'origin', "refs/tags/%s" % tagname]
+        cmd = ['git', 'tag', tagname, branchname]
         self.log_cmd(cmd, cwd=self.checkout)
 
 
@@ -687,10 +683,6 @@ class Stager(object):
         cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
         self.log_cmd(cmd, cwd=dst)
 
-        #push back to our bare git directory
-        cmd = ['git', 'push', 'origin', self.options.branch]
-        self.log_cmd(cmd, cwd=dst)
-
 
     def find_spec(self):
         """Locate specfile in checkout"""
@@ -766,10 +758,6 @@ class Stager(object):
         self.log_cmd(cmd, cwd=self.checkout)
 
         cmd = ['git', 'commit', '-m', 'debranding changes']
-        self.log_cmd(cmd, cwd=self.checkout)
-
-        #push back to our bare git directory
-        cmd = ['git', 'push', 'origin', self.options.branch]
         self.log_cmd(cmd, cwd=self.checkout)
 
 
@@ -930,7 +918,6 @@ class Pusher(Stager):
         self.check_workdir()
         self.setup_logfile()
         self.sync_repo()
-        #self.clone_repo()
         #self.setup_checkout()
         #self.import_srpm()
         #self.debrand()
