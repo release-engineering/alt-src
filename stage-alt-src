@@ -63,6 +63,7 @@ config_defaults = {
     'gitdir' : '/srv/git',
     'rulesdir' : '/var/lib/altsrc/rules',
     'lookaside' : '/srv/cache/lookaside',
+    'git_push_url' : '/srv/git/pushtest/%(package)s.git',
     'log_level' : 'WARN',
     'log_file' : None,
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
@@ -423,7 +424,6 @@ class Stager(object):
         self.setup_checkout()
         self.import_srpm()
         self.debrand()
-        self.clear_checkout()
         self.remake_srpm()
         self.notify()
         #TODO - write runtime data to workdir so publication script knows what to do
@@ -841,11 +841,6 @@ class Stager(object):
                 self.find_spec()]
         self.log_cmd(cmd, cwd=self.workdir)
 
-    def clear_checkout(self):
-        """Remove our temporary checkout"""
-        #koji.util.rmtree(self.checkout)
-        pass #XXX
-
 
     def notify(self):
         subject = 'Successfully staged %s' % self.nvr
@@ -917,11 +912,8 @@ class Pusher(Stager):
         self.check_package()
         self.check_workdir()
         self.setup_logfile()
-        self.sync_repo()
-        #self.setup_checkout()
-        #self.import_srpm()
-        #self.debrand()
-        self.clear_checkout()
+        self.push_git()
+        self.push_lookaside()
         self.notify()
 
 
@@ -945,9 +937,52 @@ class Pusher(Stager):
         self.logger.addHandler(handler)
 
 
-    def check_repo(self):
-        repo = os.path.join(self.workdir, "%s.git" % self.package)
+    def push_git(self):
+        """Get our checkout ready for the public push"""
+        self.checkout = os.path.join(self.workdir, "checkout")
 
+        # check out the stage branch
+        stage = "altsrc-stage-%s" % self.options.branch
+        cmd = ['git', 'checkout', stage]
+        self.log_cmd(cmd, cwd=self.checkout)
+
+        # fetch from public remote
+        params = {'package': self.package }  #XXX anything else?
+        git_url =  self.options.config['git_push_url'] % params
+        pushbranch = "altsrc-push-%s" % self.options.branch
+        cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
+        self.log_cmd(cmd, cwd=self.checkout)
+
+        # now force sync the pushbranch contents to match the stage in a single commit
+        cmd = ['git', 'checkout', pushbranch]
+        self.log_cmd(cmd, cwd=self.checkout)
+        cmd = ['git', 'rm', '-rf', '.']
+        self.log_cmd(cmd, cwd=self.checkout)
+        cmd = ['git', 'checkout', stage, '--', '.']
+        self.log_cmd(cmd, cwd=self.checkout)
+        cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
+        #XXX need a better commit message
+        self.log_cmd(cmd, cwd=self.checkout)
+
+        # ...and push
+        cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
+        self.log_cmd(cmd, cwd=self.checkout)
+
+    def push_lookaside(self):
+        pass
+        #TODO
+
+
+    def notify(self):
+        subject = 'Successfully pushed %s' % self.nvr
+        body = """\
+Push completed for %(nvr)s.
+
+Working directory: %(workdir)s
+""" % vars(self)
+        body = body % locals()
+        #TODO : be more informative
+        self.send_email_notice('info', subject, body)
 
 
 
