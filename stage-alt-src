@@ -968,6 +968,8 @@ class Pusher(Stager):
         cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
         self.log_cmd(cmd, cwd=self.checkout)
 
+        #TODO retry loop
+
     def push_lookaside(self):
         pass
         #TODO
