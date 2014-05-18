@@ -950,16 +950,45 @@ class Pusher(Stager):
         params = {'package': self.package }  #XXX anything else?
         git_url =  self.options.config['git_push_url'] % params
         pushbranch = "altsrc-push-%s" % self.options.branch
-        cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
-        self.log_cmd(cmd, cwd=self.checkout)
+        # see if remote has it
+        cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if rv:
+            #error talking to remote. Could be that that repo does not exist, or could be a network error
+            pass #XXX
+            #TODO attempt to init repo on remote
+        new_branch = False
+        if not output:
+            # XXX we should check the output more thoroughly
+            self.logger.warning("Branch missing on remote: %s", self.options.branch)
+            new_branch = True
+        else:
+            cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
+            self.log_cmd(cmd, cwd=self.checkout)
 
         # now force sync the pushbranch contents to match the stage in a single commit
-        cmd = ['git', 'checkout', pushbranch]
+        if new_branch:
+            cmd = ['git', 'checkout', '--orphan', pushbranch]
+            # XXX is an orphan branch the right thing?
+        else:
+            cmd = ['git', 'checkout', pushbranch]
         self.log_cmd(cmd, cwd=self.checkout)
         cmd = ['git', 'rm', '-rf', '.']
         self.log_cmd(cmd, cwd=self.checkout)
         cmd = ['git', 'checkout', stage, '--', '.']
         self.log_cmd(cmd, cwd=self.checkout)
+
+        # check that we actually have something to commit
+        cmd = ['git', 'diff', '--cached', '--name-only']
+        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if not output:
+            raise SanityError, "Nothing to commit. Already pushed?"
+        # if we're called again for some reason the commit will fail
+        # detect this and give a nicer error
         cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
         #XXX need a better commit message
         self.log_cmd(cmd, cwd=self.checkout)
