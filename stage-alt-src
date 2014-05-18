@@ -64,6 +64,7 @@ config_defaults = {
     'rulesdir' : '/var/lib/altsrc/rules',
     'lookaside' : '/srv/cache/lookaside',
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
+    'rsync_dest' : '/srv/cache/lookaside2',
     'log_level' : 'WARN',
     'log_file' : None,
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
@@ -912,8 +913,8 @@ class Pusher(Stager):
         self.check_package()
         self.check_workdir()
         self.setup_logfile()
-        self.push_git()
         self.push_lookaside()
+        self.push_git()
         self.notify()
 
 
@@ -927,6 +928,8 @@ class Pusher(Stager):
             raise SanityError, "Not staged. No such directory: %s" % dirname
         self.workdir = dirname
         # TODO - load info left by stage run
+        self.checkout = os.path.join(self.workdir, "checkout")
+
 
 
     def setup_logfile(self):
@@ -939,8 +942,6 @@ class Pusher(Stager):
 
     def push_git(self):
         """Get our checkout ready for the public push"""
-        self.checkout = os.path.join(self.workdir, "checkout")
-
         # check out the stage branch
         stage = "altsrc-stage-%s" % self.options.branch
         cmd = ['git', 'checkout', stage]
@@ -1000,8 +1001,18 @@ class Pusher(Stager):
         #TODO retry loop
 
     def push_lookaside(self):
-        pass
-        #TODO
+        meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
+        for line in meta.readlines():
+            line = line.strip()
+            digest, fn = line.split(None, 1)
+            self.push_lookaside_file(digest, fn)
+
+    def push_lookaside_file(self, digest, fn):
+        relpath = os.path.join(self.package, self.options.branch, digest)
+        cmd = ['rsync', '-ivpt', '--relative', relpath, self.options.config['rsync_dest']]
+        # --relative option preserves the relative path from the command line
+        # this is a way to ensure we create the necessary subdirs
+        self.log_cmd(cmd, cwd=self.options.config['lookaside'])
 
 
     def notify(self):
