@@ -64,7 +64,7 @@ config_defaults = {
     'rulesdir' : '/var/lib/altsrc/rules',
     'lookaside' : '/srv/cache/lookaside',
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
-    'rsync_dest' : '/srv/cache/lookaside2',
+    'lookaside_rsync_dest' : '/srv/cache/lookaside2',
     'log_level' : 'WARN',
     'log_file' : None,
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
@@ -1009,7 +1009,7 @@ class Pusher(Stager):
 
     def push_lookaside_file(self, digest, fn):
         relpath = os.path.join(self.package, self.options.branch, digest)
-        cmd = ['rsync', '-ivpt', '--relative', relpath, self.options.config['rsync_dest']]
+        cmd = ['rsync', '-ivpt', '--relative', relpath, self.options.config['lookaside_rsync_dest']]
         # --relative option preserves the relative path from the command line
         # this is a way to ensure we create the necessary subdirs
         self.log_cmd(cmd, cwd=self.options.config['lookaside'])
