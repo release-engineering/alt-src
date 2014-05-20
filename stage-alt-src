@@ -724,6 +724,10 @@ class Stager(object):
             rules.append((key, rtype, section))
         rules.sort()
 
+        if not rules:
+            self.logger.info('No rules found')
+            return
+
         # apply rules
         for key, rtype, section in rules:
             handler = 'rule_handler_%s' % rtype
@@ -757,6 +761,15 @@ class Stager(object):
         # add and commit changes
         cmd = ['git', 'add', '-A', '.']
         self.log_cmd(cmd, cwd=self.checkout)
+
+        # check that we actually have something to commit
+        cmd = ['git', 'diff', '--cached', '--name-only']
+        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if not output:
+            raise SanityError, "Debranding rules made no changes"
+            #XXX raising an error is probably not the right thing here
 
         cmd = ['git', 'commit', '-m', 'debranding changes']
         self.log_cmd(cmd, cwd=self.checkout)
@@ -953,7 +966,7 @@ class Pusher(Stager):
         pushbranch = "altsrc-push-%s" % self.options.branch
         # see if remote has it
         cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
         output = proc.communicate()[0]
         rv = proc.wait()
         if rv:
