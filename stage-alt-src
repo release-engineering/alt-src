@@ -59,7 +59,7 @@ def get_options():
 
 
 config_defaults = {
-    'stagedir' : '/srv/alt-src-stage',
+    'stagedir' : '/srv/cache/stage',
     'gitdir' : '/srv/git',
     'rulesdir' : '/var/lib/altsrc/rules',
     'lookaside' : '/srv/cache/lookaside',
