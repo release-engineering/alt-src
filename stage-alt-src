@@ -590,6 +590,38 @@ class Stager(object):
         'html', 'txt', 'init', 'conf', 'sh',
         ]
 
+    def for_lookaside(self, path):
+        """Determine if a file should go to the lookaside cache
+
+        Return True if file should go to the lookaside
+        """
+        # there are varying heuristics for what to place in the lookaside
+        # Fedora/pyrpkg decides based on extension
+        # Centos/nazar decides based on output of the file utility
+        # We're using a hybrid approach
+        ext = path.rsplit('.')[-1].lower()
+        if ext in self.INCLUDE_EXTS:
+            return False
+        if ext in self.UPLOAD_EXTS:
+            return True
+        st = os.stat(path)
+        if st.st_size < 1024:
+            # the UPLOAD_EXTS check should catch most of what we want in
+            # the lookaside, so we'll just include anything small
+            return False
+        #lastly, see what the file utility says
+        cmd = ['file', '--brief', path]
+        # XXX should we use --mime instead?
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+        output = proc.communicate()[0]
+        if proc.wait():
+            #nonfatal
+            self.logger.warn("command failed: %r" % cmd)
+            self.logger.warn("output was: %r" % output)
+            return False
+        self.logger.debug("Source file %s: %s", path, output)
+        return output.find('text') == -1
+
     def import_srpm(self):
         """Import our srpm on the specified branch"""
 
@@ -598,42 +630,13 @@ class Stager(object):
         wipe_git_dir(dst)
         self.logfile.flush()
         explode_srpm(self.srpm, dst, logfile=self.logfile)
-        # XXX clean up the logfile handling here
 
         #figure out which sources go to the lookaside
-        #XXX - this lookaside stuff should live elsewhere
         to_move = []
         sourcedir = os.path.join(dst, 'SOURCES')
         for fn in os.listdir(sourcedir):
-            # there are varying heuristics for what to place in the lookaside
-            # Fedora/pyrpkg decides based on extension
-            # Centos/nazar decides based on output of the file utility
-            # We're using a hybrid approach
-            ext = fn.rsplit('.')[-1].lower()
-            if ext in self.INCLUDE_EXTS:
-                continue
-            if ext in self.UPLOAD_EXTS:
-                to_move.append(fn)
-                continue
             path = os.path.join(sourcedir, fn)
-            st = os.stat(path)
-            if st.st_size < 1024:
-                # the UPLOAD_EXTS check should catch most of what we want in
-                # the lookaside, so we'll just include anything small
-                continue
-            #lastly, see what the file utility says
-            cmd = ['file', '--brief', path]
-            # XXX should we use --mime instead?
-            proc = subprocess.Popen(cmd, cwd=dst, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-            output = proc.communicate()[0]
-            if proc.wait():
-                #nonfatal
-                self.logger.warn("command failed: %r" % cmd)
-                self.logger.warn("output was: %r" % output)
-                continue
-            self.logger.debug("Source file %s: %s", fn, output)
-            if output.find('text') == -1:
-                #does not appear to be text
+            if self.for_lookaside(path):
                 to_move.append(fn)
 
         # move files to lookaside
