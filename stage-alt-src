@@ -673,7 +673,7 @@ class Stager(object):
                 self.logger.info('Skipping source, already in digest: %s', fn)
                 #os.unlink(path)
             # write metadata file
-            meta.write("%s %s\n" % (digest, fn))
+            meta.write("%s SOURCES/%s\n" % (digest, fn))
             # write .gitignore
             gitignore.write('SOURCES/%s\n' % fn)
         if to_move:
@@ -1021,9 +1021,9 @@ class Pusher(Stager):
         for line in meta.readlines():
             line = line.strip()
             digest, fn = line.split(None, 1)
-            self.push_lookaside_file(digest, fn)
+            self.push_lookaside_file(digest)
 
-    def push_lookaside_file(self, digest, fn):
+    def push_lookaside_file(self, digest):
         relpath = os.path.join(self.package, self.options.branch, digest)
         cmd = ['rsync', '-ivpt', '--relative', relpath, self.options.config['lookaside_rsync_dest']]
         # --relative option preserves the relative path from the command line
