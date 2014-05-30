@@ -14,7 +14,6 @@ import requests
 import socket
 import sys
 import subprocess
-import tempfile
 import time
 import traceback
 from optparse import OptionParser
