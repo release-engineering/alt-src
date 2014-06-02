@@ -46,6 +46,8 @@ def get_options():
                       help=_("force operation"))
     parser.add_option("--push", action="store_true", default=False,
                       help=_("push staged sources"))
+    parser.add_option("--brew", action="store_true", default=False,
+                      help=_("pull sources from Brew"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
                       help=_("set config option"))
     (options, args) = parser.parse_args()
@@ -71,6 +73,8 @@ config_defaults = {
     'whitelist' : '',
     'blacklist' : '',
     'changelog_user' : 'sources@centos.org',
+    'koji_hub' : 'http://brewhub.devel.redhat.com/brewhub',
+    'koji_topdir' : '/mnt/redhat/brewroot',
     'smtp_enabled' : True,
     'smtp_host' : 'localhost',
     #'smtp_host' : 'smtp.corp.redhat.com',
@@ -410,8 +414,10 @@ class Stager(object):
     def __init__(self, options):
         self.options = options
         self.logger = logging.getLogger("altsrc")
-        self.srpm = options.source
-        #TODO - support pulling srpm from Brew
+        if options.brew:
+            self.srpm = self.get_koji_srpm(options.source)
+        else:
+            self.srpm = options.source
         if not os.path.isfile(self.srpm):
             raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
@@ -451,6 +457,19 @@ class Stager(object):
             self.logger.warn("Command failed: %r" % cmd)
         return ret
 
+    def get_koji_srpm(self, source):
+        """Assume source is an n-v-r.a from koji and get the file from there"""
+        session = koji.ClientSession(self.options.config['koji_hub'], {'anon_retry':True})
+        pathinfo = koji.PathInfo(self.options.config['koji_topdir'])
+        rpminfo = session.getRPM(source)
+        if not rpminfo:
+            raise SanityError, "No such rpm: %s" % source
+        if rpminfo['arch'] != 'src':
+            raise SanityError, "Not a source rpm: %s" % source
+        binfo = session.getBuild(rpminfo['build_id'])
+        bdir = pathinfo.build(binfo)
+        relpath = pathinfo.rpm(rpminfo)
+        return os.path.join(bdir, relpath)
 
     def read_srpm(self):
         self.logger.info('Reading source rpm: %s', self.srpm)
