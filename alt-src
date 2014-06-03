@@ -408,8 +408,7 @@ class ConfigError(StageError):
 
 
 
-
-class Stager(object):
+class BaseProcessor(object):
 
     def __init__(self, options):
         self.options = options
@@ -421,20 +420,6 @@ class Stager(object):
         if not os.path.isfile(self.srpm):
             raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
-
-    def run(self):
-        self.read_srpm()
-        self.check_package()
-        self.make_workdir()
-        self.setup_logfile()
-        self.sync_repo()
-        self.setup_checkout()
-        self.import_srpm()
-        self.debrand()
-        self.remake_srpm()
-        self.notify()
-        #TODO - write runtime data to workdir so publication script knows what to do
-
 
     def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
         """Run command and log output if able"""
@@ -507,6 +492,22 @@ class Stager(object):
             self.nvr,
         ]
         return os.path.join(*parts)
+
+
+class Stager(BaseProcessor):
+
+    def run(self):
+        self.read_srpm()
+        self.check_package()
+        self.make_workdir()
+        self.setup_logfile()
+        self.sync_repo()
+        self.setup_checkout()
+        self.import_srpm()
+        self.debrand()
+        self.remake_srpm()
+        self.notify()
+        #TODO - write runtime data to workdir so publication script knows what to do
 
 
     def make_workdir(self):
@@ -940,8 +941,9 @@ Staging failed for %(nvr)s.
         server.quit()
 
 
-class Pusher(Stager):
-    #XXX this inheritance is wrong, but for now it is a quick way to get going
+
+
+class Pusher(BaseProcessor):
 
     def run(self):
         self.read_srpm()
