@@ -421,6 +421,9 @@ class BaseProcessor(object):
             raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
 
+    def run(self):
+        raise NotImplementedError
+
     def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
         """Run command and log output if able"""
         self.logger.info('Running command: %s', ' '.join(cmd))
