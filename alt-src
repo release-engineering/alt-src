@@ -494,6 +494,56 @@ class BaseProcessor(object):
         return os.path.join(*parts)
 
 
+    def send_email_notice(self, level, subject, body, extra_headers=None):
+        if not self.options.config['smtp_enabled']:
+            self.logger.warning("SMTP disabled. Skipping email notification.")
+            return
+        if level == 'info':
+            recipients = self.options.config['smtp_log_to']
+        else:
+            recipients = self.options.config['smtp_to']
+        if not recipients:
+            self.logger.warning("No recipients configured. Skipping email notification.")
+            return
+        package = self.package or "UNKNOWN"
+        headers = [
+            ('From', self.options.config['smtp_from']),
+            ('Subject', subject),
+            ('To', recipients),
+            ('X-altsrc-package', package),
+        ]
+        if extra_headers:
+            headers.extend(extra_headers)
+
+        head = "\n".join(["%s: %s" % (k,v) for k,v in headers])
+        message = "%s\n\n%s" % (head, body)
+        message.replace('\n', '\r\n')
+        message = koji.fixEncoding(message)
+        server = smtplib.SMTP(self.options.config['smtp_host'])
+        server.sendmail(self.options.config['smtp_from'], self.options.config['smtp_to'], message)
+        server.quit()
+
+
+    def handle_error(self):
+        """Handle an exception. Called from top level."""
+        tb = ''.join(traceback.format_exception(*sys.exc_info()))
+        self.logger.exception('Staging failed')
+        cls, err = sys.exc_info()[:2]
+        msg = ''.join(traceback.format_exception_only(cls, err))
+        self.logger.warning("Sending error email")
+        nvr = self.nvr or "UNKNOWN"
+        subject = 'Error staging %s' % nvr
+        body = """\
+Staging failed for %(nvr)s.
+
+%(tb)s
+"""
+        body = body % locals()
+        #TODO : be more informative
+
+        self.send_email_notice('error', subject, body)
+
+
 class Stager(BaseProcessor):
 
     def run(self):
@@ -889,58 +939,6 @@ Working directory: %(workdir)s
         body = body % locals()
         #TODO : be more informative
         self.send_email_notice('info', subject, body)
-
-
-    def handle_error(self):
-        """Handle an exception. Called from top level."""
-        tb = ''.join(traceback.format_exception(*sys.exc_info()))
-        self.logger.exception('Staging failed')
-        cls, err = sys.exc_info()[:2]
-        msg = ''.join(traceback.format_exception_only(cls, err))
-        self.logger.warning("Sending error email")
-        nvr = self.nvr or "UNKNOWN"
-        subject = 'Error staging %s' % nvr
-        body = """\
-Staging failed for %(nvr)s.
-
-%(tb)s
-"""
-        body = body % locals()
-        #TODO : be more informative
-
-        self.send_email_notice('error', subject, body)
-
-
-    def send_email_notice(self, level, subject, body, extra_headers=None):
-        if not self.options.config['smtp_enabled']:
-            self.logger.warning("SMTP disabled. Skipping email notification.")
-            return
-        if level == 'info':
-            recipients = self.options.config['smtp_log_to']
-        else:
-            recipients = self.options.config['smtp_to']
-        if not recipients:
-            self.logger.warning("No recipients configured. Skipping email notification.")
-            return
-        package = self.package or "UNKNOWN"
-        headers = [
-            ('From', self.options.config['smtp_from']),
-            ('Subject', subject),
-            ('To', recipients),
-            ('X-altsrc-package', package),
-        ]
-        if extra_headers:
-            headers.extend(extra_headers)
-
-        head = "\n".join(["%s: %s" % (k,v) for k,v in headers])
-        message = "%s\n\n%s" % (head, body)
-        message.replace('\n', '\r\n')
-        message = koji.fixEncoding(message)
-        server = smtplib.SMTP(self.options.config['smtp_host'])
-        server.sendmail(self.options.config['smtp_from'], self.options.config['smtp_to'], message)
-        server.quit()
-
-
 
 
 class Pusher(BaseProcessor):
