@@ -492,10 +492,12 @@ class BaseProcessor(object):
             letter = "_"
         parts = [
             os.path.join(self.options.config['stagedir']),
+            self.options.branch,
             letter,
             self.package,
             self.nvr,
         ]
+        # branch included in the path because debranding rules can depend on it
         return os.path.join(*parts)
 
     def get_state(self):
@@ -592,7 +594,6 @@ class Stager(BaseProcessor):
 
     def make_workdir(self):
         self.workdir = dirname = self.get_workdir()
-        self.logger.info('Creating working directory: %s', dirname)
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
         elif os.path.isdir(dirname):
@@ -611,6 +612,7 @@ class Stager(BaseProcessor):
                         % (dirname, state)
         elif os.path.exists(dirname):
             raise SanityError, "%s exists and is not a directory" % dirname
+        self.logger.info('Creating working directory: %s', dirname)
         koji.ensuredir(dirname)
         return self.set_state("INIT")
 
