@@ -502,10 +502,12 @@ class BaseProcessor(object):
         if not self.workdir:
             return None
         statefile = os.path.join(self.workdir, 'state')
+        self.logger.debug('Reading state file: %s', statefile)
         fo = open(statefile, 'r')
         try:
             fcntl.lockf(fo.fileno(), fcntl.LOCK_SH)
             state = fo.read()
+            self.logger.debug('Read state: %s', state)
         finally:
             fo.close()
         return state.strip()
@@ -514,12 +516,14 @@ class BaseProcessor(object):
         if not self.workdir:
             raise SanityError, "No workdir to set state for"
         statefile = os.path.join(self.workdir, 'state')
+        self.logger.debug('Writing state %s to file %s', state, statefile)
         fo = open(statefile, 'w')
         try:
             fcntl.lockf(fo.fileno(), fcntl.LOCK_EX)
             fo.write(state)
         finally:
             fo.close()
+        return state
 
     def send_email_notice(self, level, subject, body, extra_headers=None):
         if not self.options.config['smtp_enabled']:
@@ -576,7 +580,8 @@ class Stager(BaseProcessor):
     def run(self):
         self.read_srpm()
         self.check_package()
-        self.make_workdir()
+        if self.make_workdir() == 'STAGED':
+            return
         self.setup_logfile()
         self.sync_repo()
         self.setup_checkout()
@@ -586,7 +591,7 @@ class Stager(BaseProcessor):
         self.notify()
 
     def make_workdir(self):
-        dirname = self.get_workdir()
+        self.workdir = dirname = self.get_workdir()
         self.logger.info('Creating working directory: %s', dirname)
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
@@ -597,12 +602,17 @@ class Stager(BaseProcessor):
                 # TODO - back up first
                 koji.util.rmtree(dirname)
             else:
-                raise SanityError, "Work directory %s directory exists, use --force to overwrite." % dirname
+                state = self.get_state()
+                if state == 'STAGED':
+                    self.logger.warn("Already successfully staged: %s",  dirname)
+                    # already successfully staged
+                    return state
+                raise SanityError, "Incomplete staging dir %s (state=%s), use --force to overwrite." \
+                        % (dirname, state)
         elif os.path.exists(dirname):
             raise SanityError, "%s exists and is not a directory" % dirname
         koji.ensuredir(dirname)
-        self.workdir = dirname
-        self.set_state("INIT")
+        return self.set_state("INIT")
 
 
     def setup_logfile(self):
