@@ -2,6 +2,7 @@
 
 import ConfigParser
 import datetime
+import fcntl
 import hashlib
 import logging
 import koji
@@ -420,6 +421,7 @@ class BaseProcessor(object):
         if not os.path.isfile(self.srpm):
             raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
+        self.workdir = None
 
     def run(self):
         raise NotImplementedError
@@ -496,6 +498,28 @@ class BaseProcessor(object):
         ]
         return os.path.join(*parts)
 
+    def get_state(self):
+        if not self.workdir:
+            return None
+        statefile = os.path.join(self.workdir, 'state')
+        fo = open(statefile, 'r')
+        try:
+            fcntl.lockf(fo.fileno(), fcntl.LOCK_SH)
+            state = fo.read()
+        finally:
+            fo.close()
+        return state.strip()
+
+    def set_state(self, state):
+        if not self.workdir:
+            raise SanityError, "No workdir to set state for"
+        statefile = os.path.join(self.workdir, 'state')
+        fo = open(statefile, 'w')
+        try:
+            fcntl.lockf(fo.fileno(), fcntl.LOCK_EX)
+            fo.write(state)
+        finally:
+            fo.close()
 
     def send_email_notice(self, level, subject, body, extra_headers=None):
         if not self.options.config['smtp_enabled']:
@@ -560,8 +584,6 @@ class Stager(BaseProcessor):
         self.debrand()
         self.remake_srpm()
         self.notify()
-        #TODO - write runtime data to workdir so publication script knows what to do
-
 
     def make_workdir(self):
         dirname = self.get_workdir()
@@ -580,6 +602,7 @@ class Stager(BaseProcessor):
             raise SanityError, "%s exists and is not a directory" % dirname
         koji.ensuredir(dirname)
         self.workdir = dirname
+        self.set_state("INIT")
 
 
     def setup_logfile(self):
@@ -646,6 +669,7 @@ class Stager(BaseProcessor):
         tagname = "altsrc-start-%s" % self.options.branch
         cmd = ['git', 'tag', tagname, branchname]
         self.log_cmd(cmd, cwd=self.checkout)
+        self.set_state("CHECKOUT")
 
 
     # file extensions that are automatically placed in lookaside
@@ -759,6 +783,7 @@ class Stager(BaseProcessor):
 
         cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
         self.log_cmd(cmd, cwd=dst)
+        self.set_state("IMPORT")
 
 
     def find_spec(self):
@@ -849,6 +874,7 @@ class Stager(BaseProcessor):
 
         cmd = ['git', 'commit', '-m', 'debranding changes']
         self.log_cmd(cmd, cwd=self.checkout)
+        self.set_state("DEBRAND")
 
 
     def rule_handler_spec(self, data):
@@ -930,6 +956,7 @@ class Stager(BaseProcessor):
                 '--define', 'dist .TEST',
                 self.find_spec()]
         self.log_cmd(cmd, cwd=self.workdir)
+        self.set_state("STAGED")
 
 
     def notify(self):
@@ -965,7 +992,9 @@ class Pusher(BaseProcessor):
             # TODO - option to go ahead and stage if needed
             raise SanityError, "Not staged. No such directory: %s" % dirname
         self.workdir = dirname
-        # TODO - load info left by stage run
+        state = self.get_state()
+        if state != 'STAGED':
+            raise SanityError, "Staging incomplete"
         self.checkout = os.path.join(self.workdir, "checkout")
 
 
