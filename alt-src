@@ -988,26 +988,31 @@ class Pusher(BaseProcessor):
     def run(self):
         self.read_srpm()
         self.check_package()
-        self.check_workdir()
+        if self.check_workdir() == 'PUSHED':
+            return
         self.setup_logfile()
         self.push_lookaside()
         self.push_git()
+        self.set_state('PUSHED')
         self.notify()
 
 
     def check_workdir(self):
-        dirname = self.get_workdir()
+        self.workdir = dirname = self.get_workdir()
         self.logger.info('Checking working directory: %s', dirname)
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
         if not os.path.isdir(dirname):
             # TODO - option to go ahead and stage if needed
             raise SanityError, "Not staged. No such directory: %s" % dirname
-        self.workdir = dirname
         state = self.get_state()
+        if state == 'PUSHED':
+            self.logger.warn('Already pushed')
+            return state
         if state != 'STAGED':
             raise SanityError, "Staging incomplete"
         self.checkout = os.path.join(self.workdir, "checkout")
+        return state
 
 
 
