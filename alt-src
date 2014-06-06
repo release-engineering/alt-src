@@ -668,7 +668,7 @@ class Stager(BaseProcessor):
             self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
             cmd = ['git', 'checkout', '--orphan', branchname]
             self.log_cmd(cmd, cwd=dst)
-            cmd = ['git', 'rm', '-rf', '.']
+            cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
             self.log_cmd(cmd, cwd=dst)
             # add a commit so we can tag the start point
             cmd = ['git', 'commit', '--allow-empty', '-m', 'new orphan branch']
@@ -1042,6 +1042,7 @@ class Pusher(BaseProcessor):
         rv = proc.wait()
         if rv:
             #error talking to remote. Could be that that repo does not exist, or could be a network error
+            raise SanityError, "remote is missing: %s" % git_url
             pass #XXX
             #TODO attempt to init repo on remote
         new_branch = False
@@ -1060,7 +1061,7 @@ class Pusher(BaseProcessor):
         else:
             cmd = ['git', 'checkout', pushbranch]
         self.log_cmd(cmd, cwd=self.checkout)
-        cmd = ['git', 'rm', '-rf', '.']
+        cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
         self.log_cmd(cmd, cwd=self.checkout)
         cmd = ['git', 'checkout', stage, '--', '.']
         self.log_cmd(cmd, cwd=self.checkout)
