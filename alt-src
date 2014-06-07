@@ -67,6 +67,7 @@ config_defaults = {
     'rulesdir' : '/var/lib/altsrc/rules',
     'lookaside' : '/srv/cache/lookaside',
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
+    'git_fetch_url' : None,  # None means same as push
     'lookaside_rsync_dest' : '/srv/cache/lookaside2',
     'log_level' : 'WARN',
     'log_file' : None,
@@ -485,6 +486,17 @@ class BaseProcessor(object):
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
                 raise FilterError, 'Blacklisted package: %s' % self.package
 
+    def git_push_url(self):
+        params = {'package': self.package }  #XXX anything else?
+        git_url =  self.options.config['git_push_url'] % params
+        return git_url
+
+    def git_fetch_url(self):
+        url_form = (self.options.config['git_fetch_url']
+                    or self.options.config['git_push_url'])
+        params = {'package': self.package }  #XXX anything else?
+        git_url =  url_form % params
+        return git_url
 
     def get_workdir(self):
         letter = self.package[0]
@@ -634,8 +646,11 @@ class Stager(BaseProcessor):
             self.init_repo()
             return
 
+        # if our local copy exists, we assume that remote does as well
+
+        git_url =  self.git_fetch_url()
         self.logger.info('Syncing primary repo: %s', repo)
-        cmd = ['git', 'fetch', '-v', 'origin', '+refs/*:refs/*']
+        cmd = ['git', 'fetch', '-v', git_url, '+refs/*:refs/*']
         self.log_cmd(cmd, cwd=repo)
 
         # TODO - add sanity checks
@@ -643,9 +658,25 @@ class Stager(BaseProcessor):
 
     def init_repo(self):
         """Initialize a new repo"""
-        pass
-        #TODO
+        # check if repo exists on remote
+        git_url =  self.git_fetch_url()
+        cmd = ['git', 'ls-remote', git_url, "refs/heads/master"]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if rv:
+            # error talking to remote
+            # for now, we assume this means the remote does not exist
+            #TODO distinguish this from other errors (e.g. network)
+            self.logger.warning("Remote repo is missing: %s", git_url)
+            self.init_new_repo()
+        # otherwise we just need to clone it
+        cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
+        self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
 
+    def init_new_repo(self):
+        #TODO
+        raise NotImplementedError
 
     def setup_checkout(self):
         """Setup our working checkout"""
@@ -1032,8 +1063,7 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.checkout)
 
         # fetch from public remote
-        params = {'package': self.package }  #XXX anything else?
-        git_url =  self.options.config['git_push_url'] % params
+        git_url =  self.git_push_url()
         pushbranch = "altsrc-push-%s" % self.options.branch
         # see if remote has it
         cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
@@ -1042,9 +1072,7 @@ class Pusher(BaseProcessor):
         rv = proc.wait()
         if rv:
             #error talking to remote. Could be that that repo does not exist, or could be a network error
-            raise SanityError, "remote is missing: %s" % git_url
-            pass #XXX
-            #TODO attempt to init repo on remote
+            self.init_remote_repo()
         new_branch = False
         if not output:
             # XXX we should check the output more thoroughly
@@ -1084,6 +1112,9 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.checkout)
 
         #TODO retry loop
+
+    def init_remote_repo(self):
+        raise NotImplementedError
 
     def push_lookaside(self):
         meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
@@ -1143,7 +1174,7 @@ def wipe_git_dir(dirname):
             continue
         path = os.path.join(dirname, fn)
         if os.path.isdir(path):
-            koji.rmtree(path)
+            koji.util.rmtree(path)
         else:
             os.unlink(path)
 
