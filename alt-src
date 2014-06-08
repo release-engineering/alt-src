@@ -601,7 +601,7 @@ class Stager(BaseProcessor):
         self.setup_checkout()
         self.import_srpm()
         self.debrand()
-        self.remake_srpm()
+        self.set_state("STAGED")
         self.notify()
 
     def make_workdir(self):
@@ -999,7 +999,6 @@ class Stager(BaseProcessor):
                 '--define', 'dist .TEST',
                 self.find_spec()]
         self.log_cmd(cmd, cwd=self.workdir)
-        self.set_state("STAGED")
 
 
     def notify(self):
