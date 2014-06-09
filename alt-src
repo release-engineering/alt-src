@@ -600,7 +600,7 @@ class Stager(BaseProcessor):
     def run(self):
         self.read_srpm()
         self.check_package()
-        if self.make_workdir() == 'STAGED':
+        if self.make_workdir() in ['STAGED', 'PUSHED']:
             return
         self.setup_logfile()
         self.sync_repo()
