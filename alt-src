@@ -69,6 +69,7 @@ config_defaults = {
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
     'git_fetch_url' : None,  # None means same as push
     'lookaside_rsync_dest' : '/srv/cache/lookaside2',
+    'init_rsync_dest' : '/srv/git/pushtest/%(package)s.git',
     'log_level' : 'WARN',
     'log_file' : None,
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
@@ -587,6 +588,10 @@ Staging failed for %(nvr)s.
         #TODO : be more informative
 
         self.send_email_notice('error', subject, body)
+        if self.logfile:
+            logfilename = getattr(self.logfile, 'name')
+            if logfilename:
+                self.logger.info("Logfile: %s", logfilename)
 
 
 class Stager(BaseProcessor):
@@ -701,15 +706,18 @@ If you find this file in a distro specific branch, it means that no content has 
             for distbranch in branches:
                 cmd = ['git', 'branch', distbranch]
                 self.log_cmd(cmd, cwd=initdir)
-        #TODO config
         #finally create a bare repo from our working copy
-        cmd = ['git', 'clone', '--bare', initdir, "%s.git" % self.package]
-        self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
+        cmd = ['git', 'clone', '--bare', initdir, "repo_init.git"]
+        self.log_cmd(cmd, cwd=self.workdir)
+        #TODO git config
 
     def setup_checkout(self):
         """Setup our working checkout"""
 
         src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
+        if not os.path.exists(src):
+            # should be new repo case
+            src = os.path.join(self.workdir, "repo_init.git")
         dst = os.path.join(self.workdir, "checkout")
         self.checkout = dst
         self.logger.info('Setting up working checkout: %s', dst)
@@ -1153,7 +1161,13 @@ class Pusher(BaseProcessor):
         #TODO retry loop
 
     def init_remote_repo(self):
-        raise NotImplementedError
+        # we should have a base repo staged here
+        src = os.path.join(self.workdir, "repo_init.git/")
+        # note the trailing slash for rsync arg
+        params = {'package': self.package }  #XXX anything else?
+        dst = self.options.config['init_rsync_dest'] % params
+        cmd = ['rsync', '-ivrpt', src, dst]
+        self.log_cmd(cmd, cwd=self.workdir)
 
     def push_lookaside(self):
         meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
