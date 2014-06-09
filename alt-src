@@ -75,7 +75,9 @@ config_defaults = {
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
     'whitelist' : '',
     'blacklist' : '',
-    'changelog_user' : 'sources@centos.org',
+    'changelog_user' : 'bugs@centos.org',
+    'git_name' : 'CentOS Sources',
+    'git_email' : 'bugs@centos.org',
     'koji_hub' : 'http://brewhub.devel.redhat.com/brewhub',
     'koji_topdir' : '/mnt/redhat/brewroot',
     'smtp_enabled' : True,
@@ -500,6 +502,13 @@ class BaseProcessor(object):
         git_url =  url_form % params
         return git_url
 
+    def git_base_cmd(self):
+        cmd = ['git',
+                '-c', 'user.name=%s' % self.options.config['git_name'],
+                '-c', 'user.email=%s' % self.options.config['git_email'],
+        ]
+        return cmd
+
     def get_workdir(self):
         letter = self.package[0]
         if not letter.isalpha():
@@ -700,7 +709,8 @@ If you find this file in a distro specific branch, it means that no content has 
         fo.close()
         cmd = ['git', 'add', 'README.md']
         self.log_cmd(cmd, cwd=initdir)
-        cmd = ['git', 'commit', '-m', 'init git for %s' % self.package]
+        cmd = self.git_base_cmd()
+        cmd.extend(['commit', '-m', 'init git for %s' % self.package])
         self.log_cmd(cmd, cwd=initdir)
         branches = self.options.config.get('init_branches')
         if branches:
@@ -744,7 +754,8 @@ If you find this file in a distro specific branch, it means that no content has 
             cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
             self.log_cmd(cmd, cwd=dst)
             # add a commit so we can tag the start point
-            cmd = ['git', 'commit', '--allow-empty', '-m', 'new orphan branch']
+            cmd = self.git_base_cmd()
+            cmd.extend(['commit', '--allow-empty', '-m', 'new orphan branch'])
             self.log_cmd(cmd, cwd=dst)
         else:
             cmd = ['git', 'checkout', '-b', branchname, base]
@@ -872,7 +883,8 @@ If you find this file in a distro specific branch, it means that no content has 
             raise SanityError, "Nothing to commit. Already pushed?"
         # if we're called again for some reason the commit will fail
 
-        cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
+        cmd = self.git_base_cmd()
+        cmd.extend(['commit', '-m', 'import %s' % self.nvr])
         self.log_cmd(cmd, cwd=dst)
         self.set_state("IMPORT")
 
@@ -968,7 +980,8 @@ If you find this file in a distro specific branch, it means that no content has 
             raise SanityError, "Debranding rules made no changes"
             #XXX raising an error is probably not the right thing here
 
-        cmd = ['git', 'commit', '-m', 'debranding changes']
+        cmd = self.git_base_cmd()
+        cmd.extend(['commit', '-m', 'debranding changes'])
         self.log_cmd(cmd, cwd=self.checkout)
         self.set_state("DEBRAND")
 
@@ -1154,7 +1167,8 @@ class Pusher(BaseProcessor):
             raise SanityError, "Nothing to commit. Already pushed?"
         # if we're called again for some reason the commit will fail
         # detect this and give a nicer error
-        cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
+        cmd = self.git_base_cmd()
+        cmd.extend(['commit', '-m', 'import %s' % self.nvr])
         #XXX need a better commit message
         self.log_cmd(cmd, cwd=self.checkout)
 
