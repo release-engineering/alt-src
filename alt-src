@@ -43,8 +43,8 @@ def get_options():
                       help=_("be less verbose"))
     parser.add_option("-d", "--debug", action="store_true", default=False,
                       help=_("show debug output"))
-    parser.add_option("--force", action="store_true", default=False,
-                      help=_("force operation"))
+    parser.add_option("--restage", action="store_true", default=False,
+                      help=_("remove and recreate staged content"))
     parser.add_option("--push", action="store_true", default=False,
                       help=_("push staged sources"))
     parser.add_option("--brew", action="store_true", default=False,
@@ -610,7 +610,7 @@ class Stager(BaseProcessor):
             raise SanityError, "%s is a symlink" % dirname
         elif os.path.isdir(dirname):
             # TODO - more sanity checks
-            if self.options.force:
+            if self.options.restage:
                 self.logger.warn("Overwriting existing workdir: %s",  dirname)
                 # TODO - back up first
                 koji.util.rmtree(dirname)
@@ -620,7 +620,7 @@ class Stager(BaseProcessor):
                     self.logger.warn("Already successfully staged: %s",  dirname)
                     # already successfully staged
                     return state
-                raise SanityError, "Incomplete staging dir %s (state=%s), use --force to overwrite." \
+                raise SanityError, "Incomplete staging dir %s (state=%s), use --restage to overwrite." \
                         % (dirname, state)
         elif os.path.exists(dirname):
             raise SanityError, "%s exists and is not a directory" % dirname
@@ -1074,7 +1074,6 @@ class Pusher(BaseProcessor):
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
         if not os.path.isdir(dirname):
-            # TODO - option to go ahead and stage if needed
             raise SanityError, "Not staged. No such directory: %s" % dirname
         state = self.get_state()
         if state == 'PUSHED':
@@ -1253,19 +1252,20 @@ def setup_logging(options):
 def main():
     options = get_options()
     logger = setup_logging(options)
+    tasks = [Stager(options)]
+    # always run stager. it's a no-op if already staged
     if options.push:
-        task = Pusher(options)
-    else:
-        task = Stager(options)
-    try:
-        task.run()
-    except (SystemExit, KeyboardInterrupt), e:
-        msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
-        logger.warn("Exiting (%s)", msg)
-        sys.exit(1)
-    except Exception:
-        task.handle_error()
-        sys.exit(2)
+        tasks.append(Pusher(options))
+    for task in tasks:
+        try:
+            task.run()
+        except (SystemExit, KeyboardInterrupt), e:
+            msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
+            logger.warn("Exiting (%s)", msg)
+            sys.exit(1)
+        except Exception:
+            task.handle_error()
+            sys.exit(2)
 
 if __name__ == '__main__':
     main()
