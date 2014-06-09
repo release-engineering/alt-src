@@ -691,6 +691,22 @@ class Stager(BaseProcessor):
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
         self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
 
+    gitblit_config_format = r'''
+[gitblit]
+        description = %(summary)s
+        owner = kbsingh
+        useTickets = false
+        useDocs = false
+        accessRestriction = PUSH
+        showRemoteBranches = false
+        isFrozen = false
+        showReadme = true
+        skipSizeCalculation = false
+        skipSummaryMetrics = false
+        federationStrategy = FEDERATE_THIS
+        isFederated = false
+'''
+
     def init_new_repo(self):
         initdir = os.path.join(self.workdir, "repo_init")
         self.logger.info('Initializing new repo: %s', initdir)
@@ -725,7 +741,16 @@ If you find this file in a distro specific branch, it means that no content has 
         fo.write(self.summary)
         fo.write('\n')
         fo.close()
-        #TODO git config
+        # add gitblit options to git config
+        # XXX this content should not be hard coded
+        git_config = os.path.join(self.workdir, "repo_init.git", "config")
+        fo = file(git_config, 'a')
+        params = {
+            'summary' : self.summary,
+            'package' : self.package,
+            # anything else?
+        }
+        fo.write(self.gitblit_config_format % params)
 
     def setup_checkout(self):
         """Setup our working checkout"""
