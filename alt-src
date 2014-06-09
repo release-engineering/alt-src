@@ -660,6 +660,7 @@ class Stager(BaseProcessor):
         """Initialize a new repo"""
         # check if repo exists on remote
         git_url =  self.git_fetch_url()
+        self.logger.info("Checking if remote repo exists: %s", git_url)
         cmd = ['git', 'ls-remote', git_url, "refs/heads/master"]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
         output = proc.communicate()[0]
@@ -670,13 +671,40 @@ class Stager(BaseProcessor):
             #TODO distinguish this from other errors (e.g. network)
             self.logger.warning("Remote repo is missing: %s", git_url)
             self.init_new_repo()
+            return
         # otherwise we just need to clone it
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
         self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
 
     def init_new_repo(self):
-        #TODO
-        raise NotImplementedError
+        initdir = os.path.join(self.workdir, "repo_init")
+        self.logger.info('Initializing new repo: %s', initdir)
+        koji.ensuredir(initdir)
+        cmd = ['git', 'init']
+        self.log_cmd(cmd, cwd=initdir)
+        readme = os.path.join(initdir, 'README.md')
+        fo = open(readme, 'w')
+        # XXX this text need to live elsewhere
+        fo.write(r'''\
+The master branch has no content
+
+Look at the c7 branch if you are working with CentOS-7, or the c4/c5/c6 branch for CentOS-4, 5 or 6
+If you find this file in a distro specific branch, it means that no content has been checked in yet
+''')
+        fo.close()
+        cmd = ['git', 'add', 'README.md']
+        self.log_cmd(cmd, cwd=initdir)
+        cmd = ['git', 'commit', '-m', 'init git for %s' % self.package]
+        self.log_cmd(cmd, cwd=initdir)
+        branches = self.options.config.get('init_branches')
+        if branches:
+            for distbranch in branches:
+                cmd = ['git', 'branch', distbranch]
+                self.log_cmd(cmd, cwd=initdir)
+        #TODO config
+        #finally create a bare repo from our working copy
+        cmd = ['git', 'clone', '--bare', initdir, "%s.git" % self.package]
+        self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
 
     def setup_checkout(self):
         """Setup our working checkout"""
@@ -823,11 +851,24 @@ class Stager(BaseProcessor):
         cmd = ['git', 'add', '-A', '.']
         self.log_cmd(cmd, cwd=dst)
 
+        # see if we have anything to commit
+        cmd = ['git', 'diff', '--cached', '--name-only']
+        proc = subprocess.Popen(cmd, cwd=dst, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if not output:
+            raise SanityError, "Nothing to commit. Already pushed?"
+        # if we're called again for some reason the commit will fail
 
         cmd = ['git', 'commit', '-m', 'import %s' % self.nvr]
         self.log_cmd(cmd, cwd=dst)
         self.set_state("IMPORT")
 
+        #tag this import for reference
+        #this is not the tag we will actually push because of the rebase
+        tagname = "altsrc-stage-import-%s" % self.options.branch
+        cmd = ['git', 'tag', tagname]
+        self.log_cmd(cmd, cwd=self.checkout)
 
     def find_spec(self):
         """Locate specfile in checkout"""
