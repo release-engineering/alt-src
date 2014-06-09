@@ -469,10 +469,11 @@ class BaseProcessor(object):
         self.headers = h
         if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
             raise InputError, "%s is not a source package" % self.srpm
-        data = koji.get_header_fields(h, ['name','version','release'])
+        data = koji.get_header_fields(h, ['name','version','release','summary'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
         self.version = data['version']
+        self.summary = data['summary']
 
     def check_package(self):
         """Check whitelist/blacklist and load any package rules"""
@@ -709,6 +710,11 @@ If you find this file in a distro specific branch, it means that no content has 
         #finally create a bare repo from our working copy
         cmd = ['git', 'clone', '--bare', initdir, "repo_init.git"]
         self.log_cmd(cmd, cwd=self.workdir)
+        descfile = os.path.join(self.workdir, "repo_init.git", "description")
+        fo = file(descfile, 'w')
+        fo.write(self.summary)
+        fo.write('\n')
+        fo.close()
         #TODO git config
 
     def setup_checkout(self):
@@ -816,9 +822,8 @@ If you find this file in a distro specific branch, it means that no content has 
                 to_move.append(fn)
 
         # move files to lookaside
-        if to_move:
-            meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
-            gitignore = file(os.path.join(dst, ".gitignore"), 'w')
+        meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
+        gitignore = file(os.path.join(dst, ".gitignore"), 'w')
         for fn in to_move:
             path = os.path.join(sourcedir, fn)
             csum = hashlib.sha1()
@@ -852,9 +857,8 @@ If you find this file in a distro specific branch, it means that no content has 
             meta.write("%s SOURCES/%s\n" % (digest, fn))
             # write .gitignore
             gitignore.write('SOURCES/%s\n' % fn)
-        if to_move:
-            meta.close()
-            gitignore.close()
+        meta.close()
+        gitignore.close()
 
         cmd = ['git', 'add', '-A', '.']
         self.log_cmd(cmd, cwd=dst)
