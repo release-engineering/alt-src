@@ -1124,8 +1124,8 @@ class Pusher(BaseProcessor):
 
         # now force sync the pushbranch contents to match the stage in a single commit
         if new_branch:
-            cmd = ['git', 'checkout', '--orphan', pushbranch]
-            # XXX is an orphan branch the right thing?
+            # branch from master if new
+            cmd = ['git', 'checkout', pushbranch, 'master']
         else:
             cmd = ['git', 'checkout', pushbranch]
         self.log_cmd(cmd, cwd=self.checkout)
