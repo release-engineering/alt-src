@@ -716,7 +716,7 @@ class Stager(BaseProcessor):
         readme = os.path.join(initdir, 'README.md')
         fo = open(readme, 'w')
         # XXX this text need to live elsewhere
-        fo.write(r'''\
+        fo.write('''\
 The master branch has no content
 
 Look at the c7 branch if you are working with CentOS-7, or the c4/c5/c6 branch for CentOS-4, 5 or 6
