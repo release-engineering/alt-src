@@ -633,7 +633,9 @@ class Stager(BaseProcessor):
                 state = self.get_state()
                 if state == 'STAGED':
                     self.logger.warn("Already successfully staged: %s",  dirname)
-                    # already successfully staged
+                    return state
+                elif state == 'PUSHED':
+                    self.logger.warn("Already successfully pushed: %s",  dirname)
                     return state
                 raise SanityError, "Incomplete staging dir %s (state=%s), use --restage to overwrite." \
                         % (dirname, state)
