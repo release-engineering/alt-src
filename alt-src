@@ -1145,6 +1145,14 @@ class Pusher(BaseProcessor):
         handler.setLevel(logging.DEBUG)
         self.logger.addHandler(handler)
 
+    def sanitize_ref(self, ref):
+        # TODO sanitize
+        # TODO move elsewhere
+        return ref #XXX
+
+    def get_tagname(self):
+        #TODO fix
+        return "imports/%s/%s" % (self.options.branch, self.nvr)
 
     def push_git(self):
         """Get our checkout ready for the public push"""
@@ -1192,15 +1200,24 @@ class Pusher(BaseProcessor):
         rv = proc.wait()
         if not output:
             raise SanityError, "Nothing to commit. Already pushed?"
-        # if we're called again for some reason the commit will fail
-        # detect this and give a nicer error
+
+        #commit
         cmd = self.git_base_cmd()
         cmd.extend(['commit', '-m', 'import %s' % self.nvr])
         #XXX need a better commit message
         self.log_cmd(cmd, cwd=self.checkout)
 
+        #tag
+        tagname = self.get_tagname()
+        cmd = self.git_base_cmd()
+        cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
+        #XXX need a better commit message
+        self.log_cmd(cmd, cwd=self.checkout)
+
         # ...and push
         cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
+        self.log_cmd(cmd, cwd=self.checkout)
+        cmd = ['git', 'push', git_url, "refs/tags/%s" % tagname]
         self.log_cmd(cmd, cwd=self.checkout)
 
         #TODO retry loop
