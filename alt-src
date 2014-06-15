@@ -1148,11 +1148,44 @@ class Pusher(BaseProcessor):
     def sanitize_ref(self, ref):
         # TODO sanitize
         # TODO move elsewhere
+        '/'.join([self.sanitize_ref_segment(seg) for seg in ref.split('/')])
         return ref #XXX
+
+    git_sanitize_re = ( r'((?:^[.]'
+                        r'|[.]$'
+                        r'|[[:cntrl:]]'
+                        r'|[ %~^:?*/\\[])+)' )
+                        # % is ok in refs, but we use it to escape the rest
+
+    def sanitize_ref_segment(self, ref):
+        """Sanitize a segment of a git reference
+
+        Hex encodes any problematic character sequences
+        See the git-check-ref-format man page for reference naming rules
+        """
+        prog = re.compile(self.git_sanitize_re)
+        parts = []
+        ofs = 0
+        for match in prog.finditer(ref):
+            a, b = match.span()
+            parts.append(ref[ofs:a])
+            p2 = ref[a:b]
+            p2 = ''.join(['%%%2x' % ord(c) for c in p2])
+            parts.append(p2)
+            ofs = b
+        parts.append(ref[ofs:]) #tail
+        ref = ''.join(parts)
+        # deal with multichar patterns
+        ref = re.sub(r'[.][.]', '.%2e', ref)
+        ref = re.sub(r'[.]lock$', '%2elock', ref)
+        ref = re.sub(r'@{', '%40{', ref)
+        return ref
 
     def get_tagname(self):
         #TODO fix
-        return "imports/%s/%s" % (self.options.branch, self.nvr)
+        safe_nvr = self.sanitize_ref_segment(self.nvr)
+        tagname = "imports/%s/%s" % (self.options.branch, safe_nvr)
+        return tagname
 
     def push_git(self):
         """Get our checkout ready for the public push"""
@@ -1211,7 +1244,6 @@ class Pusher(BaseProcessor):
         tagname = self.get_tagname()
         cmd = self.git_base_cmd()
         cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
-        #XXX need a better commit message
         self.log_cmd(cmd, cwd=self.checkout)
 
         # ...and push
