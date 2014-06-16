@@ -550,6 +550,45 @@ class BaseProcessor(object):
             fo.close()
         return state
 
+    def sanitize_ref(self, ref):
+        return '/'.join([self.sanitize_ref_segment(seg) for seg in ref.split('/')])
+
+    git_sanitize_re = ( r'((?:^[.]'
+                        r'|[.]$'
+                        r'|[[:cntrl:]]'
+                        r'|[ %~^:?*/\\[])+)' )
+                        # % is ok in refs, but we use it to escape the rest
+
+    def sanitize_ref_segment(self, ref):
+        """Sanitize a segment of a git reference
+
+        Hex encodes any problematic character sequences
+        See the git-check-ref-format man page for reference naming rules
+        """
+        prog = re.compile(self.git_sanitize_re)
+        parts = []
+        ofs = 0
+        for match in prog.finditer(ref):
+            a, b = match.span()
+            parts.append(ref[ofs:a])
+            p2 = ref[a:b]
+            p2 = ''.join(['%%%2x' % ord(c) for c in p2])
+            parts.append(p2)
+            ofs = b
+        parts.append(ref[ofs:]) #tail
+        ref = ''.join(parts)
+        # deal with multichar patterns
+        ref = re.sub(r'[.][.]', '.%2e', ref)
+        ref = re.sub(r'[.]lock$', '%2elock', ref)
+        ref = re.sub(r'@{', '%40{', ref)
+        return ref
+
+    def get_tagname(self):
+        #TODO fix
+        safe_nvr = self.sanitize_ref_segment(self.nvr)
+        tagname = "imports/%s/%s" % (self.options.branch, safe_nvr)
+        return tagname
+
     def send_email_notice(self, level, subject, body, extra_headers=None):
         if not self.options.config['smtp_enabled']:
             self.logger.warning("SMTP disabled. Skipping email notification.")
@@ -1144,48 +1183,6 @@ class Pusher(BaseProcessor):
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(logging.DEBUG)
         self.logger.addHandler(handler)
-
-    def sanitize_ref(self, ref):
-        # TODO sanitize
-        # TODO move elsewhere
-        '/'.join([self.sanitize_ref_segment(seg) for seg in ref.split('/')])
-        return ref #XXX
-
-    git_sanitize_re = ( r'((?:^[.]'
-                        r'|[.]$'
-                        r'|[[:cntrl:]]'
-                        r'|[ %~^:?*/\\[])+)' )
-                        # % is ok in refs, but we use it to escape the rest
-
-    def sanitize_ref_segment(self, ref):
-        """Sanitize a segment of a git reference
-
-        Hex encodes any problematic character sequences
-        See the git-check-ref-format man page for reference naming rules
-        """
-        prog = re.compile(self.git_sanitize_re)
-        parts = []
-        ofs = 0
-        for match in prog.finditer(ref):
-            a, b = match.span()
-            parts.append(ref[ofs:a])
-            p2 = ref[a:b]
-            p2 = ''.join(['%%%2x' % ord(c) for c in p2])
-            parts.append(p2)
-            ofs = b
-        parts.append(ref[ofs:]) #tail
-        ref = ''.join(parts)
-        # deal with multichar patterns
-        ref = re.sub(r'[.][.]', '.%2e', ref)
-        ref = re.sub(r'[.]lock$', '%2elock', ref)
-        ref = re.sub(r'@{', '%40{', ref)
-        return ref
-
-    def get_tagname(self):
-        #TODO fix
-        safe_nvr = self.sanitize_ref_segment(self.nvr)
-        tagname = "imports/%s/%s" % (self.options.branch, safe_nvr)
-        return tagname
 
     def push_git(self):
         """Get our checkout ready for the public push"""
