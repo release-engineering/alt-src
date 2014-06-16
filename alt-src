@@ -844,10 +844,6 @@ If you find this file in a distro specific branch, it means that no content has 
             cmd = ['git', 'checkout', '-b', branchname, base]
             self.log_cmd(cmd, cwd=dst)
 
-        #tag our starting point
-        tagname = "altsrc-start-%s" % self.options.branch
-        cmd = ['git', 'tag', tagname, branchname]
-        self.log_cmd(cmd, cwd=self.checkout)
         self.set_state("CHECKOUT")
 
 
