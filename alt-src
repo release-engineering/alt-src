@@ -1214,6 +1214,20 @@ class Pusher(BaseProcessor):
             cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
             self.log_cmd(cmd, cwd=self.checkout)
 
+        # check for previous tagged push
+        tagname = self.get_tagname()
+        cmd = ['git', 'ls-remote', git_url, "refs/tags/%s" % tagname]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if rv:
+            #error talking to remote. This is a real error, since we would have initialized a missing repo above
+            raise CommandError, "Error communicating with remote"
+        if output:
+            self.logger.warning("Tag %s already present on remote. Skipping push.", tagname)
+            return
+            #TODO further verification
+
         # now force sync the pushbranch contents to match the stage in a single commit
         if new_branch:
             # branch from master if new
@@ -1241,7 +1255,6 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.checkout)
 
         #tag
-        tagname = self.get_tagname()
         cmd = self.git_base_cmd()
         cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
         self.log_cmd(cmd, cwd=self.checkout)
