@@ -523,6 +523,22 @@ class BaseProcessor(object):
         # branch included in the path because debranding rules can depend on it
         return os.path.join(*parts)
 
+    def duplicate_check(self):
+        """Check to see if we're already on remote"""
+        tagname = self.get_import_tagname()
+        git_url =  self.git_fetch_url()
+        cmd = ['git', 'ls-remote', git_url, "refs/tags/%s" % tagname]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
+        output = proc.communicate()[0]
+        rv = proc.wait()
+        if rv:
+            # ignore for now. either repo is missin (ok) or network/server broken (we'll die later)
+            return False
+        if output:
+            self.logger.warning("Tag %s already present on remote", tagname)
+            return True
+            #TODO further verification
+
     def get_state(self):
         if not self.workdir:
             return None
@@ -583,8 +599,7 @@ class BaseProcessor(object):
         ref = re.sub(r'@{', '%40{', ref)
         return ref
 
-    def get_tagname(self):
-        #TODO fix
+    def get_import_tagname(self):
         safe_nvr = self.sanitize_ref_segment(self.nvr)
         tagname = "imports/%s/%s" % (self.options.branch, safe_nvr)
         return tagname
@@ -648,6 +663,9 @@ class Stager(BaseProcessor):
     def run(self):
         self.read_srpm()
         self.check_package()
+        if self.duplicate_check():
+            self.logger.warning('Skipping staging for duplicate content')
+            return
         if self.make_workdir() in ['STAGED', 'PUSHED']:
             return
         self.setup_logfile()
@@ -683,7 +701,6 @@ class Stager(BaseProcessor):
         self.logger.info('Creating working directory: %s', dirname)
         koji.ensuredir(dirname)
         return self.set_state("INIT")
-
 
     def setup_logfile(self):
         self.logfile = file(os.path.join(self.workdir, 'stage.log'), 'w')
@@ -1150,6 +1167,9 @@ class Pusher(BaseProcessor):
     def run(self):
         self.read_srpm()
         self.check_package()
+        if self.duplicate_check():
+            self.logger.warning('Skipping push for duplicate content')
+            return
         if self.check_workdir() == 'PUSHED':
             return
         self.setup_logfile()
@@ -1211,20 +1231,6 @@ class Pusher(BaseProcessor):
             cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
             self.log_cmd(cmd, cwd=self.checkout)
 
-        # check for previous tagged push
-        tagname = self.get_tagname()
-        cmd = ['git', 'ls-remote', git_url, "refs/tags/%s" % tagname]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
-        if rv:
-            #error talking to remote. This is a real error, since we would have initialized a missing repo above
-            raise CommandError, "Error communicating with remote"
-        if output:
-            self.logger.warning("Tag %s already present on remote. Skipping push.", tagname)
-            return
-            #TODO further verification
-
         # now force sync the pushbranch contents to match the stage in a single commit
         if new_branch:
             # branch from master if new
@@ -1252,6 +1258,7 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.checkout)
 
         #tag
+        tagname = self.get_import_tagname()
         cmd = self.git_base_cmd()
         cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
         self.log_cmd(cmd, cwd=self.checkout)
