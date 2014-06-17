@@ -70,7 +70,7 @@ config_defaults = {
     'git_fetch_url' : None,  # None means same as push
     'lookaside_rsync_dest' : '/srv/cache/lookaside2',
     'init_rsync_dest' : '/srv/git/pushtest/%(package)s.git',
-    'log_level' : 'WARN',
+    'log_level' : 'INFO',
     'log_file' : None,
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
     'whitelist' : '',
@@ -527,12 +527,15 @@ class BaseProcessor(object):
         """Check to see if we're already on remote"""
         tagname = self.get_import_tagname()
         git_url =  self.git_fetch_url()
+        self.logger.debug("Checking remote %s for tag %s", git_url, tagname)
+        self.logger.debug("Logfile is %r", self.logfile)
         cmd = ['git', 'ls-remote', git_url, "refs/tags/%s" % tagname]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=file('/dev/null', 'w'), close_fds=True)
         output = proc.communicate()[0]
         rv = proc.wait()
         if rv:
-            # ignore for now. either repo is missin (ok) or network/server broken (we'll die later)
+            # ignore for now. either repo is missing (ok) or network/server broken (we'll die later)
+            self.logger.warning("Unable to check remote repo: %s", git_url)
             return False
         if output:
             self.logger.warning("Tag %s already present on remote", tagname)
@@ -706,7 +709,7 @@ class Stager(BaseProcessor):
         self.logfile = file(os.path.join(self.workdir, 'stage.log'), 'w')
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(self.options.file_log_level)
         self.logger.addHandler(handler)
 
 
@@ -825,6 +828,7 @@ If you find this file in a distro specific branch, it means that no content has 
 
         #create and checkout our staging branch
         branchname = "altsrc-stage-%s" % self.options.branch
+        branchname = self.sanitize_ref_segment(branchname)
         self.branchname = branchname
         base = 'refs/remotes/origin/%s' % self.options.branch
         self.logger.info('Setting up staging branch: %s', branchname)
@@ -970,6 +974,7 @@ If you find this file in a distro specific branch, it means that no content has 
         #tag this import for reference
         #this is not the tag we will actually push because of the rebase
         tagname = "altsrc-stage-import-%s" % self.options.branch
+        tagname = self.sanitize_ref_segment(tagname)
         cmd = ['git', 'tag', tagname]
         self.log_cmd(cmd, cwd=self.checkout)
 
@@ -1197,19 +1202,21 @@ class Pusher(BaseProcessor):
         self.logfile = file(os.path.join(self.workdir, 'push.log'), 'w')
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(self.options.file_log_level)
         self.logger.addHandler(handler)
 
     def push_git(self):
         """Get our checkout ready for the public push"""
         # check out the stage branch
         stage = "altsrc-stage-%s" % self.options.branch
+        stage = self.sanitize_ref_segment(stage)
         cmd = ['git', 'checkout', stage]
         self.log_cmd(cmd, cwd=self.checkout)
 
         # fetch from public remote
         git_url =  self.git_push_url()
         pushbranch = "altsrc-push-%s" % self.options.branch
+        pushbranch = self.sanitize_ref_segment(pushbranch)
         # see if remote has it
         cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
@@ -1346,27 +1353,40 @@ def die(msg):
 
 def setup_logging(options):
     logger = logging.getLogger("altsrc")
+    logger.setLevel(logging.DEBUG)
+
+    #determine log levels
+    output_log_level = logging.WARN #default
+    if options.debug:
+        output_log_level = logging.DEBUG
+    elif options.verbose:
+        output_log_level = logging.INFO
+    elif options.quiet:
+        output_log_level = logging.ERROR
+    config_warning = None
+    file_log_level = getattr(logging, options.config['log_level'], None)
+    if file_log_level is None:
+        # just use sane default and warn later
+        file_log_level = logging.WARN
+        config_warning = "Invalid log level: %s" % options.config['log_level']
+    # file level should be at least as verbose as output level
+    file_log_level = min(file_log_level, output_log_level)
+    options.file_log_level = file_log_level
+
+    # set up handlers
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter(options.config['log_format']))
-    handler.setLevel(logging.DEBUG)
+    handler.setLevel(output_log_level)
     logger.addHandler(handler)
     if options.config['log_file']:
         handler = logging.FileHandler(options.config['log_file'])
         handler.setFormatter(logging.Formatter(options.config['log_format']))
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(file_log_level)
         logger.addHandler(handler)
-    level = options.config['log_level']
-    if options.debug:
-        level = 'DEBUG'
-    elif options.verbose:
-        level = 'INFO'
-    elif options.quiet:
-        level = 'ERROR'
-    lvl = getattr(logging, level, None)
-    if lvl is None:
-        die("Invalid log level: %s" % options.config['log_level'])
-    logger.setLevel(lvl)
     # TODO - setup koji's logger?
+
+    if config_warning:
+        logger.warning(config_warning)
     return logger
 
 
