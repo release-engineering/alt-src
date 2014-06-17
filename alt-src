@@ -451,6 +451,30 @@ class BaseProcessor(object):
             self.logger.warn("Command failed: %r" % cmd)
         return ret
 
+    def get_output(self, cmd, fatal=True, **kwargs):
+        """Run command and log output if able"""
+        self.logger.info('Getting output from command: %s', ' '.join(cmd))
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs.setdefault('close_fds', True)
+        if 'stderr' in kwargs:
+            # convenience values
+            if kwargs['stderr'] == 'null':
+                kwargs['stderr'] = file('/dev/null', 'w')
+            elif kwargs['stderr'] == 'keep':
+                kwargs['stderr'] = subprocess.STDOUT
+        elif self.logfile:
+            self.logfile.flush()
+            kwargs['stderr'] = self.logfile
+        proc = subprocess.Popen(cmd, **kwargs)
+        output = proc.communicate()[0]
+        self.logger.debug("Command output was:\n%s", output)
+        rv = proc.wait()
+        if rv:
+            self.logger.warn("Command failed: %r" % cmd)
+            if fatal:
+                raise CommandError, "command failed: %r" % cmd
+        return output, rv
+
     def get_koji_srpm(self, source):
         """Assume source is an n-v-r.a from koji and get the file from there"""
         session = koji.ClientSession(self.options.config['koji_hub'], {'anon_retry':True})
@@ -530,9 +554,7 @@ class BaseProcessor(object):
         self.logger.debug("Checking remote %s for tag %s", git_url, tagname)
         self.logger.debug("Logfile is %r", self.logfile)
         cmd = ['git', 'ls-remote', git_url, "refs/tags/%s" % tagname]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=file('/dev/null', 'w'), close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
+        output, rv = self.get_output(cmd, stderr='null', fatal=False)
         if rv:
             # ignore for now. either repo is missing (ok) or network/server broken (we'll die later)
             self.logger.warning("Unable to check remote repo: %s", git_url)
@@ -744,9 +766,7 @@ class Stager(BaseProcessor):
         git_url =  self.git_fetch_url()
         self.logger.info("Checking if remote repo exists: %s", git_url)
         cmd = ['git', 'ls-remote', git_url, "refs/heads/master"]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
+        output, rv = self.get_output(cmd, fatal=False)
         if rv:
             # error talking to remote
             # for now, we assume this means the remote does not exist
@@ -894,12 +914,9 @@ If you find this file in a distro specific branch, it means that no content has 
         #lastly, see what the file utility says
         cmd = ['file', '--brief', path]
         # XXX should we use --mime instead?
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-        output = proc.communicate()[0]
-        if proc.wait():
+        output, rv = self.get_output(cmd, stderr='keep', fatal=False)
+        if rv:
             #nonfatal
-            self.logger.warn("command failed: %r" % cmd)
-            self.logger.warn("output was: %r" % output)
             return False
         self.logger.debug("Source file %s: %s", path, output)
         return output.find('text') == -1
@@ -965,9 +982,7 @@ If you find this file in a distro specific branch, it means that no content has 
 
         # see if we have anything to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
-        proc = subprocess.Popen(cmd, cwd=dst, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
+        output, rv = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
         if not output:
             raise SanityError, "Nothing to commit. Already pushed?"
         # if we're called again for some reason the commit will fail
@@ -1063,9 +1078,7 @@ If you find this file in a distro specific branch, it means that no content has 
 
         # check that we actually have something to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
-        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
+        output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
         if not output:
             raise SanityError, "Debranding rules made no changes"
             #XXX raising an error is probably not the right thing here
@@ -1235,11 +1248,6 @@ class Pusher(BaseProcessor):
 
     def push_git(self):
         """Get our checkout ready for the public push"""
-        # check out the stage branch
-        stage = "altsrc-stage-%s" % self.options.branch
-        stage = self.sanitize_ref_segment(stage)
-        cmd = ['git', 'checkout', stage]
-        self.log_cmd(cmd, cwd=self.checkout)
 
         # fetch from public remote
         git_url =  self.git_push_url()
@@ -1247,9 +1255,7 @@ class Pusher(BaseProcessor):
         pushbranch = self.sanitize_ref_segment(pushbranch)
         # see if remote has it
         cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=self.logfile, close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
+        output, rv = self.get_output(cmd, cwd=self.checkout, fatal=False)
         if rv:
             #error talking to remote. Could be that that repo does not exist, or could be a network error
             self.init_remote_repo()
@@ -1263,6 +1269,10 @@ class Pusher(BaseProcessor):
             self.log_cmd(cmd, cwd=self.checkout)
 
         # now force sync the pushbranch contents to match the stage in a single commit
+        our_import_tag = "altsrc-stage-import-%s" % self.options.branch
+        our_import_tag = self.sanitize_ref_segment(our_import_tag)
+        stage_branch = "altsrc-stage-%s" % self.options.branch
+        stage_branch = self.sanitize_ref_segment(stage_branch)
         if new_branch:
             # branch from master if new
             cmd = ['git', 'checkout', '-b', pushbranch, 'master']
@@ -1271,14 +1281,14 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.checkout)
         cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
         self.log_cmd(cmd, cwd=self.checkout)
-        cmd = ['git', 'checkout', stage, '--', '.']
+        cmd = ['git', 'checkout', stage_branch, '--', '.']
         self.log_cmd(cmd, cwd=self.checkout)
+
+        # TODO - split this into import + debrand commit if appropriate
 
         # check that we actually have something to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
-        proc = subprocess.Popen(cmd, cwd=self.checkout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, close_fds=True)
-        output = proc.communicate()[0]
-        rv = proc.wait()
+        output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
         if not output:
             raise SanityError, "Nothing to commit. Already pushed?"
 
