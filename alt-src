@@ -675,7 +675,13 @@ class Stager(BaseProcessor):
         self.sync_repo()
         self.setup_checkout()
         self.import_srpm()
-        self.debrand()
+        try:
+            self.debrand()
+        except (SystemExit, KeyboardInterrupt):
+            raise
+        except Exception:
+            self.logger.exception('Debranding failed')
+            self.handle_debrand_fail()
         self.set_state("STAGED")
         self.notify()
 
@@ -1051,7 +1057,7 @@ If you find this file in a distro specific branch, it means that no content has 
             getattr(self, handler)(data)
             # TODO - check result
 
-        # add and commit changes
+        # and commit changes
         cmd = ['git', 'add', '-A', '.']
         self.log_cmd(cmd, cwd=self.checkout)
 
@@ -1069,6 +1075,28 @@ If you find this file in a distro specific branch, it means that no content has 
         self.log_cmd(cmd, cwd=self.checkout)
         self.set_state("DEBRAND")
 
+    def handle_debrand_fail(self):
+        """If debranding fails, clean up and note failure"""
+
+        self.logger.warning("Resetting checkout to import")
+        tagname = "altsrc-stage-import-%s" % self.options.branch
+        tagname = self.sanitize_ref_segment(tagname)
+        cmd = ['git', 'reset', '--hard', "refs/tags/%s" % tagname]
+        self.log_cmd(cmd, cwd=self.checkout)
+
+        self.logger.warning("Adding debranding failure notice")
+        fn = os.path.join(self.checkout, "README.debrand")
+        fo = file(fn, 'w')
+        fo.write('''\
+Warning: This package was configured for automatic debranding, but the changes
+failed to apply.
+''')
+        fo.close()
+        cmd = ['git', 'add', 'README.debrand']
+        self.log_cmd(cmd, cwd=self.checkout)
+        #and commit
+        cmd = ['git', 'commit', '-m', 'Debranding failure notice']
+        self.log_cmd(cmd, cwd=self.checkout)
 
     def rule_handler_spec(self, data):
         """Patch the spec file"""
