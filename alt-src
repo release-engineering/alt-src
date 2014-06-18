@@ -1268,24 +1268,28 @@ class Pusher(BaseProcessor):
             cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
             self.log_cmd(cmd, cwd=self.checkout)
 
-        # now force sync the pushbranch contents to match the stage in a single commit
+        # now apply changes on pushbranch to stage branch
         our_import_tag = "altsrc-stage-import-%s" % self.options.branch
         our_import_tag = self.sanitize_ref_segment(our_import_tag)
         stage_branch = "altsrc-stage-%s" % self.options.branch
         stage_branch = self.sanitize_ref_segment(stage_branch)
+        output, rv = self.get_output(['git', 'rev-parse', our_import_tag], cwd=self.checkout, fatal=True)
+        import_rev = output.strip()
+        output, rv = self.get_output(['git', 'rev-parse', stage_branch], cwd=self.checkout, fatal=True)
+        stage_rev = output.strip()
+        #TODO assert that stage_branch is a descendant of our_import_tag
         if new_branch:
             # branch from master if new
             cmd = ['git', 'checkout', '-b', pushbranch, 'master']
         else:
             cmd = ['git', 'checkout', pushbranch]
         self.log_cmd(cmd, cwd=self.checkout)
+
+        # set push branch to match import
         cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
         self.log_cmd(cmd, cwd=self.checkout)
-        cmd = ['git', 'checkout', stage_branch, '--', '.']
+        cmd = ['git', 'checkout', our_import_tag, '--', '.']
         self.log_cmd(cmd, cwd=self.checkout)
-
-        # TODO - split this into import + debrand commit if appropriate
-
         # check that we actually have something to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
         output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
@@ -1303,6 +1307,24 @@ class Pusher(BaseProcessor):
         cmd = self.git_base_cmd()
         cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
         self.log_cmd(cmd, cwd=self.checkout)
+
+        if stage_rev != import_rev:
+            # grab the rest of the stage branch (debranding)
+            cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
+            self.log_cmd(cmd, cwd=self.checkout)
+            cmd = ['git', 'checkout', stage_branch, '--', '.']
+            self.log_cmd(cmd, cwd=self.checkout)
+            # check that we actually have something to commit
+            cmd = ['git', 'diff', '--cached', '--name-only']
+            output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
+            if not output:
+                raise SanityError, "Debranding commits resulted in no changes?"
+            #commit
+            cmd = self.git_base_cmd()
+            cmd.extend(['commit', '-m', 'debranding changes'])
+            #XXX need a better commit message
+            self.log_cmd(cmd, cwd=self.checkout)
+            #TODO - another tag?
 
         # ...and push
         cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
