@@ -75,7 +75,7 @@ config_defaults = {
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
     'whitelist' : '',
     'blacklist' : '',
-    'changelog_user' : 'bugs@centos.org',
+    'changelog_user' : 'CentOS Sources <bugs@centos.org>',
     'git_name' : 'CentOS Sources',
     'git_email' : 'bugs@centos.org',
     'koji_hub' : 'http://brewhub.devel.redhat.com/brewhub',
@@ -173,7 +173,7 @@ class SpecFile(object):
 
         regname = regex_match + ' => ' + regex_replace
 
-        self.changelog['Ran Regex: ' + regname] = changelog
+        #self.changelog['Ran Regex: ' + regname] = changelog
 
         return True
 
@@ -275,7 +275,7 @@ class SpecFile(object):
 
         self.text = self.text.replace(patch_entry, patch_entry + entry)
 
-        self.changelog['Added Patch: ' + patchname] = changelog
+        #self.changelog['Added Patch: ' + patchname] = changelog
 
         return (patchnum, patchname)
 
@@ -306,7 +306,7 @@ class SpecFile(object):
         match_patch = re.findall(patch_re, self.text)
         self.text = self.text.replace(match_patch[0], '\n')
 
-        self.changelog['Removed Patch: ' + patchname] = changelog
+        #self.changelog['Removed Patch: ' + patchname] = changelog
 
         return (patchnum, patchname)
 
@@ -354,7 +354,7 @@ class SpecFile(object):
 
         self.text = self.text.replace(source_entry, source_entry + entry)
 
-        self.changelog['Added Source: ' + sourcename] = changelog
+        #self.changelog['Added Source: ' + sourcename] = changelog
 
         return (sourcenum, sourcename)
 
@@ -383,7 +383,7 @@ class SpecFile(object):
         '''
             Write out the specfile with changes
         '''
-        self.__add_changelog()
+        #self.__add_changelog()
         _fd = open(self.specfile, 'w')
         _fd.write(self.text)
         _fd.close()
@@ -546,6 +546,23 @@ class BaseProcessor(object):
         ]
         # branch included in the path because debranding rules can depend on it
         return os.path.join(*parts)
+
+    def find_spec(self, relative=False):
+        """Locate specfile in checkout"""
+        specdir = os.path.join(self.checkout, 'SPECS')
+
+        #first look for $package.spec
+        path = os.path.join(specdir, self.package + '.spec')
+        if os.path.isfile(path):
+            return path
+
+        #otherwise
+        for fn in os.listdir(specdir):
+            if fn.endswith('.spec'):
+                return os.path.join(specdir, fn)
+
+        raise SanityError, 'No spec file in checkout: %s' % self.checkout
+
 
     def duplicate_check(self):
         """Check to see if we're already on remote"""
@@ -999,23 +1016,6 @@ If you find this file in a distro specific branch, it means that no content has 
         cmd = ['git', 'tag', tagname]
         self.log_cmd(cmd, cwd=self.checkout)
 
-    def find_spec(self):
-        """Locate specfile in checkout"""
-        specdir = os.path.join(self.checkout, 'SPECS')
-
-        #first look for $package.spec
-        path = os.path.join(specdir, self.package + '.spec')
-        if os.path.isfile(path):
-            return path
-
-        #otherwise
-        for fn in os.listdir(specdir):
-            if fn.endswith('.spec'):
-                return os.path.join(specdir, fn)
-
-        raise SanityError, 'No spec file in checkout: %s' % self.checkout
-
-
     def debrand(self):
         """Apply debranding rules"""
         #search for applicable rules
@@ -1039,15 +1039,19 @@ If you find this file in a distro specific branch, it means that no content has 
         rules.sort()
 
         if not rules:
-            self.logger.info('No rules found')
+            self.logger.info('No debranding rules found')
             return
 
         # apply rules
+        changelog_notes=[]
         for key, rtype, section in rules:
             handler = 'rule_handler_%s' % rtype
             if not hasattr(self, handler):
                 raise ConfigError, "No handler for rule type %s" % rtype
             data = dict(cp.items(section))
+            clog_note = data.get('changelog')
+            if clog_note:
+                changelog_notes.append(clog_note)
             if 'enabled' in data:
                 enabled = data['enabled'].lower().strip()
                 if enabled in ('no', 'false', '0'):
@@ -1075,6 +1079,10 @@ If you find this file in a distro specific branch, it means that no content has 
         # and commit changes
         cmd = ['git', 'add', '-A', '.']
         self.log_cmd(cmd, cwd=self.checkout)
+
+        # write out changelog for later
+        # we'll update the date and add to spec at push time
+        self.prep_changelog(changelog_notes)
 
         # check that we actually have something to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
@@ -1110,6 +1118,43 @@ failed to apply.
         #and commit
         cmd = ['git', 'commit', '-m', 'Debranding failure notice']
         self.log_cmd(cmd, cwd=self.checkout)
+
+    def prep_changelog(self, notes):
+        """Generate changelog info"""
+        self.logger.info('Preparing changelog entry')
+        user = self.options.config['changelog_user']
+        verrel = self.get_modded_verrel()
+        #now = datetime.datetime.now().strftime('%a %b %d %Y')
+        parts = ['* INSERT_DATE_HERE %s - %s\n' % (user, verrel),
+                 '- Apply debranding changes\n']
+        for note in notes:
+            for line in note.splitlines():
+                line = line.strip()
+                if line:
+                    parts.append('- %s\n' % line)
+        fo = file(os.path.join(self.workdir, 'changelog.txt'), 'w')
+        for part in parts:
+            fo.write(part)
+            self.logger.debug("%s", part)
+        fo.close()
+
+    def get_modded_verrel(self):
+        spec = self.find_spec()
+        macros = self.get_mod_macros()
+        cmd = ['rpm', '-q', '--specfile', spec]
+        for m in macros:
+            cmd.extend(['--define', '%s %s' % (m, macros[m])])
+        cmd.extend([
+               '--qf', '%{v}-%{r}'])
+        verrel, rv = self.get_output(cmd, cwd=self.checkout)
+        return verrel
+
+    def get_mod_macros(self):
+        #TODO
+        return {
+            "dist" : ".el7.centos", #XXX
+            "rhel" : "7", #XXX
+            }
 
     def rule_handler_spec(self, data):
         """Patch the spec file"""
@@ -1178,8 +1223,8 @@ failed to apply.
         if not os.path.isfile(script):
             raise ConfigError, 'Script missing: %s' % script
 
-        cmd = [script, self.workdir, self.find_spec()]
-        self.log_cmd(cmd, cwd=self.workdir)
+        cmd = [script, self.checkout, self.find_spec()]
+        self.log_cmd(cmd, cwd=self.checkout)
 
     def remake_srpm(self):
         """Remake the srpm"""
@@ -1215,6 +1260,7 @@ class Pusher(BaseProcessor):
         if self.check_workdir() == 'PUSHED':
             return
         self.setup_logfile()
+        self.add_changelog()
         self.push_lookaside()
         self.push_git()
         self.set_state('PUSHED')
@@ -1245,6 +1291,57 @@ class Pusher(BaseProcessor):
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(self.options.file_log_level)
         self.logger.addHandler(handler)
+
+    def add_changelog(self):
+        """Check for a prepared changelog entry and add to spec if found"""
+
+        fn = os.path.join(self.workdir, 'changelog.txt')
+        if not os.path.exists(fn):
+            self.logger.info("No prepared changelog found")
+            return
+
+        # make sure we're still on the stage branch
+        stage_branch = "altsrc-stage-%s" % self.options.branch
+        stage_branch = self.sanitize_ref_segment(stage_branch)
+        self.log_cmd(['git', 'checkout', stage_branch], cwd=self.checkout)
+
+        # get the changelog entry
+        fo = file(fn, 'r')
+        clog = fo.read()
+        now = datetime.datetime.now().strftime('%a %b %d %Y')
+        if clog.find('INSERT_DATE_HERE') == -1:
+            self.logger.error("Prepared changelog is malformed")
+            return
+        clog = clog.replace('INSERT_DATE_HERE', now, 1)
+
+        # insert the entry into spec
+        spec = self.find_spec()
+        prog = re.compile(r'^(\s*%changelog.*)$', re.MULTILINE)
+        inf = file(spec, 'r')
+        parts = prog.split(inf.read())
+        inf.close()
+        if len(parts) == 1:
+            self.logger.error('Could not find changelog in spec')
+            return
+        elif len(parts) == 2:
+            # should not be possible
+            raise SanityError, 'Unable to split changelog from spec'
+        outf = file(spec, 'w')
+        for part in parts[:2]:
+            outf.write(part)
+        outf.write('\n')
+        outf.write(clog)
+        if len(parts) > 2:
+            self.logger.warning('Found multiple %changelog macros in spec')
+            # keep going
+            for part in parts[2:]:
+                outf.write(part)
+        outf.close()
+
+        # add commit
+        relpath = os.path.join('SPECS', os.path.basename(spec))
+        self.log_cmd(['git', 'add', relpath], cwd=self.checkout)
+        self.log_cmd(['git', 'commit', '-m', 'add changelog entry'], cwd=self.checkout)
 
     def push_git(self):
         """Get our checkout ready for the public push"""
@@ -1321,7 +1418,7 @@ class Pusher(BaseProcessor):
                 raise SanityError, "Debranding commits resulted in no changes?"
             #commit
             cmd = self.git_base_cmd()
-            cmd.extend(['commit', '-m', 'debranding changes'])
+            cmd.extend(['commit', '-m', 'debrand %s' % self.nvr])
             #XXX need a better commit message
             self.log_cmd(cmd, cwd=self.checkout)
             #TODO - another tag?
