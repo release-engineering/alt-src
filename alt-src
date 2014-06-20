@@ -928,10 +928,6 @@ If you find this file in a distro specific branch, it means that no content has 
             self.log_cmd(cmd, cwd=dst)
             cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
             self.log_cmd(cmd, cwd=dst)
-            # add a commit so we can tag the start point
-            cmd = self.git_base_cmd()
-            cmd.extend(['commit', '--allow-empty', '-m', 'new orphan branch'])
-            self.log_cmd(cmd, cwd=dst)
         else:
             cmd = ['git', 'checkout', '-b', branchname, base]
             self.log_cmd(cmd, cwd=dst)
