@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import ConfigParser
+import cStringIO
 import datetime
 import fcntl
 import hashlib
@@ -418,6 +419,7 @@ class BaseProcessor(object):
     def __init__(self, options):
         self.options = options
         self.logger = logging.getLogger("altsrc")
+        self.error_log = None
         if options.brew:
             self.srpm = self.get_koji_srpm(options.source)
         else:
@@ -429,6 +431,18 @@ class BaseProcessor(object):
 
     def run(self):
         raise NotImplementedError
+
+    def add_error_logger(self):
+        """Capture all error messages for use in later notifications"""
+        self.error_log = cStringIO.StringIO()
+        handler = logging.StreamHandler(self.error_log)
+        handler.setFormatter(logging.Formatter(self.options.config['log_format']))
+        handler.setLevel(logging.ERROR)
+        self.error_handler = handler
+        self.logger.addHandler(handler)
+
+    def remove_error_logger(self):
+        self.logger.removeHandler(self.error_handler)
 
     def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
         """Run command and log output if able"""
@@ -682,6 +696,22 @@ class BaseProcessor(object):
         server.sendmail(self.options.config['smtp_from'], self.options.config['smtp_to'], message)
         server.quit()
 
+    def notify_errors(self):
+        """Send notification about non-fatal errors"""
+
+        if not self.error_log:
+            return
+        error_messages = self.error_log.getvalue()
+        if not error_messages:
+            return
+        self.logger.warning("Sending notification of non-fatal errors")
+        nvr = self.nvr or "UNKNOWN"
+        subject = 'Non-fatal errors for %s' % nvr
+        body = "Errors:\n%s" % error_messages
+        self.error_log.seek(0)
+        self.error_log.truncate()
+        #TODO : be more informative
+        self.send_email_notice('error', subject, body)
 
     def handle_error(self):
         """Handle an exception. Called from top level."""
@@ -699,6 +729,12 @@ Staging failed for %(nvr)s.
 """
         body = body % locals()
         #TODO : be more informative
+        if self.error_log:
+            error_messages = self.error_log.getvalue()
+            if error_messages:
+                body = "%s\nErrors:\n%s\n" % (body, error_messages)
+                self.error_log.seek(0)
+                self.error_log.truncate()
 
         self.send_email_notice('error', subject, body)
         if self.logfile:
@@ -710,6 +746,7 @@ Staging failed for %(nvr)s.
 class Stager(BaseProcessor):
 
     def run(self):
+        self.add_error_logger()
         self.read_srpm()
         self.check_package()
         if self.duplicate_check():
@@ -730,6 +767,7 @@ class Stager(BaseProcessor):
             self.handle_debrand_fail()
         self.set_state("STAGED")
         self.notify()
+        self.remove_error_logger()
 
     def make_workdir(self):
         self.workdir = dirname = self.get_workdir()
@@ -1259,6 +1297,7 @@ Working directory: %(workdir)s
 class Pusher(BaseProcessor):
 
     def run(self):
+        self.add_error_logger()
         self.read_srpm()
         self.check_package()
         if self.duplicate_check():
@@ -1272,6 +1311,7 @@ class Pusher(BaseProcessor):
         self.push_git()
         self.set_state('PUSHED')
         self.notify()
+        self.remove_error_logger()
 
 
     def check_workdir(self):
@@ -1339,7 +1379,7 @@ class Pusher(BaseProcessor):
         outf.write('\n')
         outf.write(clog)
         if len(parts) > 2:
-            self.logger.warning('Found multiple %changelog macros in spec')
+            self.logger.error('Found multiple %changelog macros in spec')
             # keep going
             for part in parts[2:]:
                 outf.write(part)
@@ -1564,6 +1604,7 @@ def main():
     for task in tasks:
         try:
             task.run()
+            task.notify_errors()
         except (SystemExit, KeyboardInterrupt), e:
             msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
             logger.warn("Exiting (%s)", msg)
