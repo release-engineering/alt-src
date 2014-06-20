@@ -647,16 +647,19 @@ class BaseProcessor(object):
         return tagname
 
     def send_email_notice(self, level, subject, body, extra_headers=None):
+        do_send = True
         if not self.options.config['smtp_enabled']:
             self.logger.warning("SMTP disabled. Skipping email notification.")
-            return
+            do_send = False
+            #return
         if level == 'info':
             recipients = self.options.config['smtp_log_to']
         else:
             recipients = self.options.config['smtp_to']
         if not recipients:
             self.logger.warning("No recipients configured. Skipping email notification.")
-            return
+            do_send = False
+            #return
         package = self.package or "UNKNOWN"
         headers = [
             ('From', self.options.config['smtp_from']),
@@ -671,6 +674,10 @@ class BaseProcessor(object):
         message = "%s\n\n%s" % (head, body)
         message.replace('\n', '\r\n')
         message = koji.fixEncoding(message)
+        self.logger.debug("Email notice contents:\n%s\n", message)
+        if not do_send:
+            self.logger.debug("Email not sent")
+            return
         server = smtplib.SMTP(self.options.config['smtp_host'])
         server.sendmail(self.options.config['smtp_from'], self.options.config['smtp_to'], message)
         server.quit()
