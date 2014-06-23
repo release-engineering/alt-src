@@ -1116,7 +1116,7 @@ If you find this file in a distro specific branch, it means that no content has 
                     continue
             self.logger.info("Applying rule: %s", section)
             can_fail = False
-            if data.get('can_fail', '').lower() in ('yes', 'y', '1'):
+            if data.get('can_fail', '').lower() in ('yes', 'y', '1', 'true'):
                 can_fail = True
             try:
                 getattr(self, handler)(data)
