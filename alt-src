@@ -1064,6 +1064,7 @@ If you find this file in a distro specific branch, it means that no content has 
         cp = ConfigParser.RawConfigParser()
         for name in 'altsrc-global', self.package:
             cfile = os.path.join(self.options.config['rulesdir'], name + '.cfg')
+            self.logger.debug('Looking for rules in %s', cfile)
             if not os.access(cfile, os.F_OK):
                 continue
             self.logger.info('Loading rules from %s', cfile)
@@ -1114,8 +1115,20 @@ If you find this file in a distro specific branch, it means that no content has 
                     self.logger.debug('Skipping rule due to branch filter: %s', section)
                     continue
             self.logger.info("Applying rule: %s", section)
-            getattr(self, handler)(data)
-            # TODO - check result
+            can_fail = False
+            if data.get('can_fail', '').lower() in ('yes', 'y', '1'):
+                can_fail = True
+            try:
+                getattr(self, handler)(data)
+                # TODO - check result
+            except (SystemExit, KeyboardInterrupt):
+                raise
+            except Exception:
+                self.logger.error('Failed to apply debranding rule [%s %s] to %s',
+                        rtype, key, self.nvr)
+                if not can_fail:
+                    # caller will handle
+                    raise
 
         # and commit changes
         cmd = ['git', 'add', '-A', '.']
