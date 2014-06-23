@@ -1124,7 +1124,7 @@ If you find this file in a distro specific branch, it means that no content has 
             except (SystemExit, KeyboardInterrupt):
                 raise
             except Exception:
-                self.logger.error('Failed to apply debranding rule [%s %s] to %s',
+                self.logger.error('Failed to apply debranding rule (%s: %s) to %s',
                         rtype, key, self.nvr)
                 if not can_fail:
                     # caller will handle
@@ -1143,7 +1143,7 @@ If you find this file in a distro specific branch, it means that no content has 
         output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
         if not output:
             raise SanityError, "Debranding rules made no changes"
-            #XXX raising an error is probably not the right thing here
+            # caller will clean up
 
         cmd = self.git_base_cmd()
         cmd.extend(['commit', '-m', 'debranding changes'])
