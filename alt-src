@@ -1258,7 +1258,8 @@ failed to apply.
         num = data.get('num')
         if method == 'add':
             name = data['patch']
-            stripe = data['stripe']
+            name = os.path.join(self.options.config['rulesdir'], name)
+            stripe = data.get('stripe', 1)
             spec.add_patch(name, stripe, num, changelog)
 
         elif method == 'del':
