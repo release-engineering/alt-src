@@ -1009,6 +1009,7 @@ If you find this file in a distro specific branch, it means that no content has 
             path = os.path.join(sourcedir, fn)
             if self.for_lookaside(path):
                 to_move.append(fn)
+        to_move.sort()
 
         # move files to lookaside
         meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
