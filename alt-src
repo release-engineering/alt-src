@@ -293,19 +293,33 @@ class SpecFile(object):
         if patchname != None:
             patch_re = '(\s*[pP]atch(\d+):\s+(' + patchname + ')\n)'
         elif patchnum != None:
-            patch_re = '(\s*[pP]atch(' + str(patchnum) + '):\s+(\S+?)\s+?)'
+            patch_re = r'(\s*[pP]atch(' + str(patchnum) + r'):\s+(\S+?)\s+?)'
         else:
             raise ValueError('You must specify something I can use here')
 
         matches = re.findall(patch_re, self.text)
+        if not matches:
+            self.logger.error("Spec does not match pattern: %r", patch_re)
+            raise SanityError, "Could not find patch to remove"
         self.text = self.text.replace(matches[0][0], '\n')
 
         patchnum = matches[0][1]
         patchname = matches[0][2]
 
+        # also remove the line that applies the patch
         patch_re = '(%patch' + patchnum + '.+?\n)'
         match_patch = re.findall(patch_re, self.text)
-        self.text = self.text.replace(match_patch[0], '\n')
+        if match_patch:
+            self.text = self.text.replace(match_patch[0], '\n')
+        else:
+            # possibly this is because autosetup is doing it
+            prog = re.compile(r'^\s*%autosetup.* -S git\b', re.MULTILINE)
+            if prog.search(self.text):
+                # TODO add a flag to indicate this is expected
+                self.logger.warning('Patch %s appears to be applied by %%autosetup', patchname)
+            else:
+                self.logger.error('No %%patch line for patch %s', patchname)
+                raise SanityError, "Unable to remove patch"
 
         #self.changelog['Removed Patch: ' + patchname] = changelog
 
@@ -1124,7 +1138,7 @@ If you find this file in a distro specific branch, it means that no content has 
             except (SystemExit, KeyboardInterrupt):
                 raise
             except Exception:
-                self.logger.error('Failed to apply debranding rule (%s: %s) to %s',
+                self.logger.exception('Failed to apply debranding rule (%s: %s) to %s',
                         rtype, key, self.nvr)
                 if not can_fail:
                     # caller will handle
@@ -1199,8 +1213,9 @@ failed to apply.
         for m in macros:
             cmd.extend(['--define', '%s %s' % (m, macros[m])])
         cmd.extend([
-               '--qf', '%{v}-%{r}'])
-        verrel, rv = self.get_output(cmd, cwd=self.checkout)
+               '--qf', '%{v}-%{r}\\n'])
+        output, rv = self.get_output(cmd, cwd=self.checkout)
+        verrel = output.splitlines()[0]
         return verrel
 
     def get_mod_macros(self):
@@ -1387,11 +1402,12 @@ class Pusher(BaseProcessor):
             outf.write(part)
         outf.write('\n')
         outf.write(clog)
-        if len(parts) > 2:
+        for part in parts[2:]:
+            outf.write(part)
+        if len(parts) > 3:
             self.logger.error('Found multiple %changelog macros in spec')
             # keep going
-            for part in parts[2:]:
-                outf.write(part)
+            self.logger.debug('Context:\n%s%s', parts)
         outf.close()
 
         # add commit
