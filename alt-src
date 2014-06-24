@@ -1196,10 +1196,15 @@ failed to apply.
         parts = ['* INSERT_DATE_HERE %s - %s\n' % (user, verrel),
                  '- Apply debranding changes\n']
         for note in notes:
+            lineno=0
             for line in note.splitlines():
                 line = line.strip()
                 if line:
-                    parts.append('- %s\n' % line)
+                    lineno += 1
+                    if lineno == 1:
+                        parts.append('- %s\n' % line)
+                    else:
+                        parts.append('-  %s\n' % line)
         fo = file(os.path.join(self.workdir, 'changelog.txt'), 'w')
         for part in parts:
             fo.write(part)
