@@ -1177,6 +1177,8 @@ If you find this file in a distro specific branch, it means that no content has 
         self.log_cmd(['git', 'diff', tagname], cwd=self.checkout)
         cmd = ['git', 'reset', '--hard', "refs/tags/%s" % tagname]
         self.log_cmd(cmd, cwd=self.checkout)
+        cmd = ['git', 'clean', '-f']
+        self.log_cmd(cmd, cwd=self.checkout)
 
         self.logger.warning("Adding debranding failure notice")
         fn = os.path.join(self.checkout, "README.debrand")
