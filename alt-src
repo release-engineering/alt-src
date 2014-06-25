@@ -1173,6 +1173,8 @@ If you find this file in a distro specific branch, it means that no content has 
         self.logger.warning("Resetting checkout to import")
         tagname = "altsrc-stage-import-%s" % self.options.branch
         tagname = self.sanitize_ref_segment(tagname)
+        self.logger.info("Logging changes to be reverted")
+        self.log_cmd(['git', 'diff', tagname], cwd=self.checkout)
         cmd = ['git', 'reset', '--hard', "refs/tags/%s" % tagname]
         self.log_cmd(cmd, cwd=self.checkout)
 
@@ -1289,9 +1291,13 @@ failed to apply.
                 lnum = lineno
                 if m.group(1):
                     pnum = max(pnum, int(m.group(1)))
-                    if patchnum == pnum:
-                        self.logger.error("Patch %s already present: %s", patchnum, line)
-                        raise SanityError, "Duplicate patch number"
+                else:
+                    # unnumbered patch equivalent to zero
+                    # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
+                    pnum = 0
+                if patchnum == pnum:
+                    self.logger.error("Patch %s already present: %s", patchnum, line)
+                    raise SanityError, "Duplicate patch number"
             elif name_re.search(line):
                 lname = lineno
         if patchnum == -1:
@@ -1437,9 +1443,13 @@ failed to apply.
                 lnum = lineno
                 if m.group(1):
                     snum = max(snum, int(m.group(1)))
-                    if sourcenum == snum:
-                        self.logger.error("Source %s already present: %s", sourcenum, line)
-                        raise SanityError, "Duplicate source number"
+                else:
+                    # unnumbered source equivalent to zero
+                    # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
+                    snum = 0
+                if sourcenum == snum:
+                    self.logger.error("Source %s already present: %s", sourcenum, line)
+                    raise SanityError, "Duplicate source number"
             elif name_re.search(line):
                 lname = lineno
         if sourcenum == -1:
