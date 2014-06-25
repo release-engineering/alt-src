@@ -1135,6 +1135,8 @@ failed to apply.
         method = data['method'].lower()
         if method == 'add':
             self.handle_add_source(data)
+        elif method == 'replace':
+            self.handle_replace_source(data)
         #XXX support del?
         else:
             self.logger.error('Unknown source rule method: %s', method)
@@ -1183,6 +1185,49 @@ failed to apply.
         # insert the SourceNN entry
         entry = "Source%d:\t%s\n" % (sourcenum, sourcename)
         lines.insert(lnum + 1, entry)
+
+        # copy source file
+        sourcedir = os.path.join(self.checkout, 'SOURCES')
+        dest = os.path.join(sourcedir, sourcename)
+        if os.path.isfile(dest):
+            self.logger.error("Source file already present, overwriting: %s", dest)
+            os.remove(dest)
+        self.logger.debug("Copy %s -> %s", sourcefile, sourcedir)
+        shutil.copy2(sourcefile, sourcedir)
+
+        #TODO - option to remove old
+
+        # write it back out
+        fo = file(specfile, 'w')
+        fo.writelines(lines)
+        fo.close()
+
+    def handle_replace_source(self, data):
+        """Replace a source entry in spec file"""
+
+        sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
+        orig = data['orig']
+        sourcename = os.path.basename(sourcefile)
+        specfile = self.find_spec()
+        fo = file(specfile, 'r')
+        lines = fo.readlines()
+        fo.close()
+
+        # find the original source entry
+        source_re = re.compile(r'^(\s*[sS]ource\d*:\s+)(' + orig + r')\s*$')
+        lnum = -1
+        for lineno, line in enumerate(lines):
+            m = source_re.search(line)
+            if m:
+                lnum = lineno
+                head = m.group(1)
+                break
+        else:
+            self.logger.error('Could not find source %s in spec', orig)
+            raise SanityError, 'No such source'
+        # ... and replace it
+        entry = "%s%s\n" % (head, sourcename)
+        lines[lnum] = entry
 
         # copy source file
         sourcedir = os.path.join(self.checkout, 'SOURCES')
