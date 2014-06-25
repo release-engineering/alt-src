@@ -964,6 +964,17 @@ failed to apply.
         # TODO more options
         self.log_cmd(cmd, cwd=self.checkout)
 
+    def rule_handler_simplepatch(self, data):
+        """Just apply a patch to the checkout"""
+
+        patchfile = os.path.join(self.options.config['rulesdir'], data['patch'])
+        strip = int(data.get('strip', '1'))
+        cmd = ['patch', '-r', '-', '--no-backup-if-mismatch', '-p%i' % strip, '-i', patchfile]
+        if 'fuzz' in data:
+            fuzz = int(data['fuzz'])
+            cmd.extend(['-F', fuzz])
+        self.log_cmd(cmd, cwd=self.checkout)
+
     def rule_handler_re(self, data):
         """Apply a regex substitution to the spec file"""
 
@@ -992,7 +1003,7 @@ failed to apply.
         patchfile = os.path.join(self.options.config['rulesdir'], data['patch'])
         patchname = os.path.basename(patchfile)
         patchnum = int(data.get('num', '-1'))
-        patchstripe = int(data.get('stripe', '1'))
+        patchstrip = int(data.get('strip', '1'))
         self.logger.debug("Adding patch: %r", data)
         specfile = self.find_spec()
         fo = file(specfile, 'r')
@@ -1043,7 +1054,7 @@ failed to apply.
         shutil.copy2(patchfile, sourcedir)
 
         # add the entry for applying
-        entry = "%%patch%d -p%d\n" % (patchnum, patchstripe)
+        entry = "%%patch%d -p%d\n" % (patchnum, patchstrip)
         apply_re = re.compile(r'^\s*%patch\d+\s+-p\d')
         auto_re = re.compile(r'^\s*%autosetup\b')
         setup_re = re.compile(r'\s*%setup\b')
