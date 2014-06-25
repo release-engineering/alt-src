@@ -1088,31 +1088,32 @@ failed to apply.
         shutil.copy2(patchfile, sourcedir)
 
         # add the entry for applying
-        entry = "%%patch%d -p%d\n" % (patchnum, patchstrip)
-        apply_re = re.compile(r'^\s*%patch\d+\s+-p\d')
-        auto_re = re.compile(r'^\s*%autosetup\b')
-        setup_re = re.compile(r'\s*%setup\b')
-        lnum = -1
-        lsetup = -1
-        auto = False
-        for lineno, line in enumerate(lines):
-            if apply_re.search(line):
-                lnum = lineno
-            elif auto_re.search(line):
-                auto = True
-            elif lsetup < 0 and setup_re.search(line):
-                lsetup = lineno
-        if lnum > -1:
-            # after last %patch line
-            lines.insert(lnum + 1, entry)
-            self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
-        elif auto:
-            # TODO add a flag to indicate this is expected
-            self.logger.warning('Patches appear to be applied by %%autosetup. Omitting %patch entry')
-        elif lsetup > -1:
-            # after first %setup line
-            lines.insert(lsetup + 1, entry)
-            self.logger.debug("Inserting spec line: %i: %s", lsetup+1, entry)
+        if data.get('apply', 'y').lower() in ('y', 'yes', '1', 'true'):
+            entry = "%%patch%d -p%d\n" % (patchnum, patchstrip)
+            apply_re = re.compile(r'^\s*%patch\d+\s+-p\d')
+            auto_re = re.compile(r'^\s*%autosetup\b')
+            setup_re = re.compile(r'\s*%setup\b')
+            lnum = -1
+            lsetup = -1
+            auto = False
+            for lineno, line in enumerate(lines):
+                if apply_re.search(line):
+                    lnum = lineno
+                elif auto_re.search(line):
+                    auto = True
+                elif lsetup < 0 and setup_re.search(line):
+                    lsetup = lineno
+            if lnum > -1:
+                # after last %patch line
+                lines.insert(lnum + 1, entry)
+                self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
+            elif auto:
+                # TODO add a flag to indicate this is expected
+                self.logger.warning('Patches appear to be applied by %%autosetup. Omitting %patch entry')
+            elif lsetup > -1:
+                # after first %setup line
+                lines.insert(lsetup + 1, entry)
+                self.logger.debug("Inserting spec line: %i: %s", lsetup+1, entry)
 
         # write it back out
         fo = file(specfile, 'w')
@@ -1240,8 +1241,6 @@ failed to apply.
         self.logger.debug("Copy %s -> %s", sourcefile, sourcedir)
         shutil.copy2(sourcefile, sourcedir)
 
-        #TODO - option to remove old
-
         # write it back out
         fo = file(specfile, 'w')
         fo.writelines(lines)
@@ -1251,7 +1250,6 @@ failed to apply.
         """Replace a source entry in spec file"""
 
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
-        orig = data['orig']
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
         fo = file(specfile, 'r')
@@ -1259,7 +1257,12 @@ failed to apply.
         fo.close()
 
         # find the original source entry
-        source_re = re.compile(r'^(\s*[sS]ource\d*:\s+)(' + orig + r')\s*$')
+        if 'num' in data:
+            num = int(data['num'])
+            source_re = re.compile(r'^(\s*[sS]ource' + str(num) + ':\s+)(\S+)\s*$')
+        elif 'name' in data:
+            name = data['name']
+            source_re = re.compile(r'^(\s*[sS]ource\d*:\s+)(' + name + r')\s*$')
         lnum = -1
         for lineno, line in enumerate(lines):
             m = source_re.search(line)
@@ -1268,7 +1271,7 @@ failed to apply.
                 head = m.group(1)
                 break
         else:
-            self.logger.error('Could not find source %s in spec', orig)
+            self.logger.error('Could not find source, no match for %r', source_re.pattern)
             raise SanityError, 'No such source'
         # ... and replace it
         entry = "%s%s\n" % (head, sourcename)
@@ -1282,6 +1285,8 @@ failed to apply.
             os.remove(dest)
         self.logger.debug("Copy %s -> %s", sourcefile, sourcedir)
         shutil.copy2(sourcefile, sourcedir)
+
+        #TODO - option to remove old
 
         # write it back out
         fo = file(specfile, 'w')
