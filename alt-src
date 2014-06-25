@@ -736,33 +736,9 @@ If you find this file in a distro specific branch, it means that no content has 
         gitignore = file(os.path.join(dst, ".gitignore"), 'w')
         for fn in to_move:
             path = os.path.join(sourcedir, fn)
-            csum = hashlib.sha1()
-            # XXX should we move to something stronger?
-            fo = file(path, 'rb')
-            chunk = 'IGNORE ME!'
-            while chunk:
-                chunk = fo.read(8192)
-                csum.update(chunk)
-            fo.close()
-            digest = csum.hexdigest()
-            dirname = os.path.join(self.options.config['lookaside'], self.package, self.options.branch)
-            # XXX - using Centos/nazar path for now, may need to change
-            lpath = os.path.join(dirname, digest)
-            if not os.path.isfile(lpath):
-                koji.ensuredir(dirname)
-                self.logger.info('Copying source file to lookaside: %s -> %s', fn, lpath)
-                shutil.copy2(path, lpath)
-            else:
-                # we appear to already have it
-                st1 = os.stat(path)
-                st2 = os.stat(lpath)
-                if st1.st_size != st2.st_size:
-                    self.logger.error("Possibly corrupt lookaside entry: %s", lpath)
-                    self.logger.error("Size: %s, but current matching source is %s", st1.st_size, st2.st_size)
-                    raise SanityError, "Lookaside size mismatch"
-                # TODO - more sanity checks
-                self.logger.info('Skipping source, already in digest: %s', fn)
-                #os.unlink(path)
+            digest = self.get_digest(path)
+            self.copy_to_lookaside(path, digest)
+            os.unlink(path)
             # write metadata file
             meta.write("%s SOURCES/%s\n" % (digest, fn))
             # write .gitignore
@@ -791,6 +767,40 @@ If you find this file in a distro specific branch, it means that no content has 
         tagname = self.sanitize_ref_segment(tagname)
         cmd = ['git', 'tag', tagname]
         self.log_cmd(cmd, cwd=self.checkout)
+
+    def get_digest(self, path):
+        """Calculate hex digest for file"""
+
+        csum = hashlib.sha1()
+        # XXX should we move to something stronger?
+        fo = file(path, 'rb')
+        chunk = 'IGNORE ME!'
+        while chunk:
+            chunk = fo.read(8192)
+            csum.update(chunk)
+        fo.close()
+        return csum.hexdigest()
+
+    def copy_to_lookaside(self, path, digest):
+        """Copy file to lookaside"""
+
+        dirname = os.path.join(self.options.config['lookaside'], self.package, self.options.branch)
+        # XXX - using Centos/nazar path for now, may need to change
+        lpath = os.path.join(dirname, digest)
+        if not os.path.isfile(lpath):
+            koji.ensuredir(dirname)
+            self.logger.info('Copying source file to lookaside: %s -> %s', path, lpath)
+            shutil.copy2(path, lpath)
+        else:
+            # we appear to already have it
+            st1 = os.stat(path)
+            st2 = os.stat(lpath)
+            if st1.st_size != st2.st_size:
+                self.logger.error("Possibly corrupt lookaside entry: %s", lpath)
+                self.logger.error("Size: %s, but current matching source is %s", st1.st_size, st2.st_size)
+                raise SanityError, "Lookaside size mismatch"
+            # TODO - more sanity checks
+            self.logger.info('Skipping source, already in digest: %s', path)
 
     def debrand(self):
         """Apply debranding rules"""
@@ -864,6 +874,30 @@ If you find this file in a distro specific branch, it means that no content has 
                 if not can_fail:
                     # caller will handle
                     raise
+
+        #see if any new sources need to go to the lookaside
+        cmd = ['git', 'ls-files', '--exclude-standard', '--others']
+        output, rv = self.get_output(cmd, cwd=self.checkout)
+        for_lookaside = []
+        if output:
+            self.logger.info('New files added:\n%s', output)
+            for fn in output.splitlines():
+                path = os.path.join(self.checkout, fn)
+                if self.for_lookaside(path):
+                    for_lookaside.append(fn)
+        if for_lookaside:
+            meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'a')
+            gitignore = file(os.path.join(self.checkout, ".gitignore"), 'a')
+            for fn in for_lookaside:
+                path = os.path.join(self.checkout, fn)
+                digest = self.get_digest(path)
+                self.copy_to_lookaside(path, digest)
+                os.unlink(path)
+                meta.write("%s %s\n" % (digest, fn))
+                gitignore.write('%s\n' % fn)
+            meta.close()
+            gitignore.close()
+
 
         # and commit changes
         cmd = ['git', 'add', '-A', '.']
