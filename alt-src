@@ -354,8 +354,10 @@ class SpecFile(object):
         sourcenum = (max(sourcenum_list) + 1)
 
         sourcename = os.path.basename(sourcefile)
-        if os.path.isfile(self.basedir + '/../SOURCES/' + sourcename):
-            os.remove(self.basedir + '/../SOURCES/' + sourcename)
+        dest = os.path.join(self.sourcesdir, sourcename)
+        if os.path.isfile(dest):
+            self.logger.error("Source file already present, overwriting: %s", dest)
+            os.remove(dest)
         self.logger.debug("Copy %s -> %s", sourcefile, self.sourcesdir)
         shutil.copy2(sourcefile, self.sourcesdir)
         entry = "\nSource" + str(sourcenum) + ":\t" + sourcename
@@ -1244,37 +1246,163 @@ failed to apply.
     def rule_handler_re(self, data):
         """Apply a regex substitution to the spec file"""
 
-        spec = SpecFile(self.find_spec(), self.options.config['changelog_user'])
-
-        changelog = data.get('changelog')
-        spec.run_re(data['match'], data['replace'], changelog)
+        fn = self.find_spec()
+        fo = file(fn, 'r')
+        text = fo.read()
+        fo.close()
+        text = re.sub(data['match'], data['replace'], text)
+        fo = file(fn, 'w')
+        fo.write(text)
+        fo.close()
 
     def rule_handler_patch(self, data):
         """Add or remove a patch in the spec file"""
 
-        spec = SpecFile(self.find_spec(), self.options.config['changelog_user'])
-
         method = data['method'].lower()
-        changelog = data.get('changelog')
-        num = data.get('num')
         if method == 'add':
-            name = data['patch']
-            name = os.path.join(self.options.config['rulesdir'], name)
-            stripe = data.get('stripe', 1)
-            spec.add_patch(name, stripe, num, changelog)
+            self.handle_add_patch(data)
 
         elif method == 'del':
-            if 'patch' in data:
-                name = os.path.basename(data['patch'])
+            self.handle_rm_patch(data)
+
+    def handle_add_patch(self, data):
+        """Add a patch in the spec file"""
+
+        patchfile = os.path.join(self.options.config['rulesdir'], data['patch'])
+        patchname = os.path.basename(patchfile)
+        patchnum = int(data.get('num', '-1'))
+        patchstripe = int(data.get('stripe', '1'))
+        self.logger.debug("Adding patch: %r", data)
+        specfile = self.find_spec()
+        fo = file(specfile, 'r')
+        lines = fo.readlines()
+        fo.close()
+        # find highest patch number and last patch line location
+        patch_re = re.compile(r'^\s*[pP]atch(\d*):\s+(\S+)\s*$')
+        name_re = re.compile(r'^\s*[nN]ame:\s+')
+        pnum = -1
+        lnum = -1
+        lname = -1
+        for lineno, line in enumerate(lines):
+            m = patch_re.search(line)
+            if m:
+                lnum = lineno
+                if m.group(1):
+                    pnum = max(pnum, int(m.group(1)))
+                    if patchnum == pnum:
+                        self.logger.error("Patch %s already present: %s", patchnum, line)
+                        raise SanityError, "Duplicate patch number"
+            elif name_re.search(line):
+                lname = lineno
+        if patchnum == -1:
+            if lnum == -1:
+                # no existing patches
+                patchnum = 1
             else:
-                name = None
+                patchnum = pnum + 1
+        if lnum == -1:
+            lnum = lname
 
-            # XXX I guess this is a common rpmpatch config typo?
-            if num == name:
-                raise ConfigError, 'Bad patch section in config'
+        # insert the PatchNN entry
+        entry = "Patch%d:\t%s\n"  % (patchnum, patchname)
+        self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
+        lines.insert(lnum + 1, entry)
 
-            return spec.rm_patch(name, num, changelog)
+        # copy the patch file
+        sourcedir = os.path.join(self.checkout, 'SOURCES')
+        dest = os.path.join(sourcedir, patchname)
+        if os.path.isfile(dest):
+            self.logger.error("Patch already present, overwriting: %s", dest)
+            os.remove(dest)
+        self.logger.debug("Copy %s -> %s", patchfile, sourcedir)
+        shutil.copy2(patchfile, sourcedir)
 
+        # add the entry for applying
+        entry = "%%patch%d -p%d\n" % (patchnum, patchstripe)
+        apply_re = re.compile(r'^\s*%patch\d+\s+-p\d')
+        auto_re = re.compile(r'^\s*%autosetup\b')
+        setup_re = re.compile(r'\s*%setup\b')
+        lnum = -1
+        lsetup = -1
+        auto = False
+        for lineno, line in enumerate(lines):
+            if apply_re.search(line):
+                lnum = lineno
+            elif auto_re.search(line):
+                auto = True
+            elif lsetup < 0 and setup_re.search(line):
+                lsetup = lineno
+        if lnum > -1:
+            # after last %patch line
+            lines.insert(lnum + 1, entry)
+            self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
+        elif auto:
+            # TODO add a flag to indicate this is expected
+            self.logger.warning('Patches appear to be applied by %%autosetup. Omitting %patch entry')
+        elif lsetup > -1:
+            # after first %setup line
+            lines.insert(lsetup + 1, entry)
+            self.logger.debug("Inserting spec line: %i: %s", lsetup+1, entry)
+
+        # write it back out
+        fo = file(specfile, 'w')
+        fo.writelines(lines)
+        fo.close()
+
+    def handle_rm_patch(self, data):
+        """Remove specified patch from spec"""
+
+        patchnum = data.get('num')
+        patchname = None
+        if 'patch' in data:
+            patchname = os.path.basename(data['patch'])
+            patch_re = re.compile(r'^\s*[pP]atch(\d+):\s+(' + patchname + r')\s*$')
+        elif patchnum != None:
+            patch_re = re.compile(r'^\s*[pP]atch(' + str(patchnum) + r'):\s+(\S+?)\s*$')
+        else:
+            self.logger.error('No patch specified for removal')
+            raise SanityError, 'Invalid rule'
+
+        specfile = self.find_spec()
+        fo = file(specfile, 'r')
+        lines = fo.readlines()
+        fo.close()
+
+        # find PatchNN line
+        for lineno, line in enumerate(lines):
+            m = patch_re.search(line)
+            if m:
+                patchnum = m.group(1)
+                patchname = m.group(2)
+                break
+        else:
+            self.logger.error("No match for pattern: %r", patch_re.pattern)
+            raise SanityError, "Could not find patch to remove"
+        # remove the matching line
+        del lines[lineno]
+
+        # also remove the line that applies the patch
+        apply_re = re.compile(r'^\s*%patch' + patchnum + r'(?:\D.*)?$')
+        setup_re = re.compile(r'^\s*%autosetup\b')
+        auto = False
+        for lineno, line in enumerate(lines):
+            if apply_re.search(line):
+                del lines[lineno]
+                break
+            elif not auto and setup_re.search(line):
+                auto = True
+        else:
+            if auto:
+                # TODO add a flag to indicate this is expected
+                self.logger.warning('Patch %s appears to be applied by %%autosetup', patchname)
+            else:
+                self.logger.error('No %%patch line for patch %s', patchname)
+                raise SanityError, "Unable to remove patch"
+
+        # write it back out
+        fo = file(specfile, 'w')
+        fo.writelines(lines)
+        fo.close()
 
     def rule_handler_source(self, data):
         """Add a source to the specfile"""
