@@ -1053,12 +1053,9 @@ failed to apply.
             m = patch_re.search(line)
             if m:
                 lnum = lineno
-                if m.group(1):
-                    pnum = max(pnum, int(m.group(1)))
-                else:
-                    # unnumbered patch equivalent to zero
-                    # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
-                    pnum = 0
+                pnum = max(pnum, int(m.group(1) or "0"))
+                # unnumbered patch equivalent to zero
+                # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if patchnum == pnum:
                     self.logger.error("Patch %s already present: %s", patchnum, line)
                     raise SanityError, "Duplicate patch number"
@@ -1208,12 +1205,9 @@ failed to apply.
             m = source_re.search(line)
             if m:
                 lnum = lineno
-                if m.group(1):
-                    snum = max(snum, int(m.group(1)))
-                else:
-                    # unnumbered source equivalent to zero
-                    # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
-                    snum = 0
+                snum = max(snum, int(m.group(1) or "0"))
+                # unnumbered source equivalent to zero
+                # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if sourcenum == snum:
                     self.logger.error("Source %s already present: %s", sourcenum, line)
                     raise SanityError, "Duplicate source number"
