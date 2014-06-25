@@ -1240,12 +1240,11 @@ failed to apply.
     def rule_handler_spec(self, data):
         """Patch the spec file"""
 
-        spec = SpecFile(self.find_spec(), self.options.config['changelog_user'])
-
-        changelog = data.get('changelog')
-        fn = data['patch']
-        patch = os.path.join(self.options.config['rulesdir'], fn)
-        spec.apply_specfile_diff(patch, changelog)
+        spec_patch = os.path.join(self.options.config['rulesdir'], data['patch'])
+        specfile = self.find_spec()
+        cmd = ['patch', '-r', '-', '--no-backup-if-mismatch', specfile, spec_patch]
+        # TODO more options
+        self.log_cmd(cmd, cwd=self.checkout)
 
     def rule_handler_re(self, data):
         """Apply a regex substitution to the spec file"""
