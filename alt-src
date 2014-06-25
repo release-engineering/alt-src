@@ -1419,13 +1419,14 @@ failed to apply.
         """Add a source entry in spec file"""
 
         sourcenum = int(data.get('num', '-1'))
-        sourcefile = data['source']
+        sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
+        sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
         fo = file(specfile, 'r')
         lines = fo.readlines()
         fo.close()
 
-        source_re = re.compile(r'^\s*[sS]ource(\d*):\s+(\S+)\s*$)')
+        source_re = re.compile(r'^\s*[sS]ource(\d*):\s+(\S+)\s*$')
         name_re = re.compile(r'^\s*[nN]ame:\s+')
         snum = -1
         lnum = -1
@@ -1444,18 +1445,17 @@ failed to apply.
         if sourcenum == -1:
             if lnum == -1:
                 # no existing sources
-                patchnum = 1
+                sourcenum = 1
             else:
-                patchnum = snum + 1
+                sourcenum = snum + 1
         if lnum == -1:
             lnum = lname
 
         # insert the SourceNN entry
-        entry = "Source%d:\t%s" % (sourcenum, sourcename)
+        entry = "Source%d:\t%s\n" % (sourcenum, sourcename)
         lines.insert(lnum + 1, entry)
 
         # copy source file
-        sourcename = os.path.basename(sourcefile)
         sourcedir = os.path.join(self.checkout, 'SOURCES')
         dest = os.path.join(sourcedir, sourcename)
         if os.path.isfile(dest):
@@ -1463,6 +1463,11 @@ failed to apply.
             os.remove(dest)
         self.logger.debug("Copy %s -> %s", sourcefile, sourcedir)
         shutil.copy2(sourcefile, sourcedir)
+
+        # write it back out
+        fo = file(specfile, 'w')
+        fo.writelines(lines)
+        fo.close()
 
     def rule_handler_script(self, data):
         """Run an arbitary script"""
