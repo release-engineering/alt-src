@@ -1076,13 +1076,7 @@ failed to apply.
         lines.insert(lnum + 1, entry)
 
         # copy the patch file
-        sourcedir = os.path.join(self.checkout, 'SOURCES')
-        dest = os.path.join(sourcedir, patchname)
-        if os.path.isfile(dest):
-            self.logger.error("Patch already present, overwriting: %s", dest)
-            os.remove(dest)
-        self.logger.debug("Copy %s -> %s", patchfile, sourcedir)
-        shutil.copy2(patchfile, sourcedir)
+        self.copy_new_source(patchfile)
 
         # add the entry for applying
         if data.get('apply', 'y').lower() in ('y', 'yes', '1', 'true'):
@@ -1116,6 +1110,17 @@ failed to apply.
         fo = file(specfile, 'w')
         fo.writelines(lines)
         fo.close()
+
+    def copy_new_source(self, path):
+        """Copy a new source file into checkout source dir"""
+        sourcedir = os.path.join(self.checkout, 'SOURCES')
+        name = os.path.basename(path)
+        dest = os.path.join(sourcedir, name)
+        if os.path.isfile(dest):
+            self.logger.error("Source already present, overwriting: %s", dest)
+            os.remove(dest)
+        self.logger.debug("Copy %s -> %s", path, sourcedir)
+        shutil.copy2(path, sourcedir)
 
     def handle_rm_patch(self, data):
         """Remove specified patch from spec"""
@@ -1227,13 +1232,7 @@ failed to apply.
         lines.insert(lnum + 1, entry)
 
         # copy source file
-        sourcedir = os.path.join(self.checkout, 'SOURCES')
-        dest = os.path.join(sourcedir, sourcename)
-        if os.path.isfile(dest):
-            self.logger.error("Source file already present, overwriting: %s", dest)
-            os.remove(dest)
-        self.logger.debug("Copy %s -> %s", sourcefile, sourcedir)
-        shutil.copy2(sourcefile, sourcedir)
+        self.copy_new_source(sourcefile)
 
         # write it back out
         fo = file(specfile, 'w')
@@ -1272,13 +1271,7 @@ failed to apply.
         lines[lnum] = entry
 
         # copy source file
-        sourcedir = os.path.join(self.checkout, 'SOURCES')
-        dest = os.path.join(sourcedir, sourcename)
-        if os.path.isfile(dest):
-            self.logger.error("Source file already present, overwriting: %s", dest)
-            os.remove(dest)
-        self.logger.debug("Copy %s -> %s", sourcefile, sourcedir)
-        shutil.copy2(sourcefile, sourcedir)
+        self.copy_new_source(sourcefile)
 
         #TODO - option to remove old
 
