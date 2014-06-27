@@ -50,6 +50,8 @@ def get_options():
                       help=_("push staged sources"))
     parser.add_option("--brew", action="store_true", default=False,
                       help=_("pull sources from Brew"))
+    parser.add_option("--keep-sources", action="store_true", default=False,
+                      help=_("keep lookaside sources in staging checkout"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
                       help=_("set config option"))
     (options, args) = parser.parse_args()
@@ -738,7 +740,8 @@ If you find this file in a distro specific branch, it means that no content has 
             path = os.path.join(sourcedir, fn)
             digest = self.get_digest(path)
             self.copy_to_lookaside(path, digest)
-            os.unlink(path)
+            if not self.options.keep_sources:
+                os.unlink(path)
             # write metadata file
             meta.write("%s SOURCES/%s\n" % (digest, fn))
             # write .gitignore
@@ -892,7 +895,8 @@ If you find this file in a distro specific branch, it means that no content has 
                 path = os.path.join(self.checkout, fn)
                 digest = self.get_digest(path)
                 self.copy_to_lookaside(path, digest)
-                os.unlink(path)
+                if not self.options.keep_sources:
+                    os.unlink(path)
                 meta.write("%s %s\n" % (digest, fn))
                 gitignore.write('%s\n' % fn)
             meta.close()
