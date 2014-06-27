@@ -952,8 +952,9 @@ failed to apply.
         user = self.options.config['changelog_user']
         verrel = self.get_modded_verrel()
         #now = datetime.datetime.now().strftime('%a %b %d %Y')
-        parts = ['* INSERT_DATE_HERE %s - %s\n' % (user, verrel),
-                 '- Apply debranding changes\n']
+        parts = ['* INSERT_DATE_HERE %s - %s\n' % (user, verrel)]
+        if not notes:
+            parts.append('- Apply debranding changes\n')
         for note in notes:
             lineno=0
             for line in note.splitlines():
