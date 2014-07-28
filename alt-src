@@ -1017,13 +1017,49 @@ failed to apply.
     def rule_handler_re(self, data):
         """Apply a regex substitution to the spec file"""
 
+        if data.get('mode') == 'line':
+            self.handle_re_line(data)
         fn = self.find_spec()
         fo = file(fn, 'r')
         text = fo.read()
         fo.close()
-        text = re.sub(data['match'], data['replace'], text)
+        count = int(data.get('count', '0'))
+        if count:
+            text = re.sub(data['match'], data['replace'], text, count)
+        else:
+            text = re.sub(data['match'], data['replace'], text)
         fo = file(fn, 'w')
         fo.write(text)
+        fo.close()
+
+    def handle_re_line(self, data):
+        specfile = self.find_spec()
+        fo = file(specfile, 'r')
+        lines = fo.readlines()
+        fo.close()
+        prog = re.compile(data['match'])
+        count = int(data.get('count', '0'))
+        # count is how many replacements to make, zero means unlimited
+        n_match = 0
+        for lineno, line in enumerate(lines):
+            if count:
+                remain = count - n_match
+                if remain <= 0:
+                    break
+                line2, n = prog.subn(data['replace'], line, remain)
+            else:
+                line2, n = prog.subn(data['replace'], line)
+            n_match += n
+            if n > 0:
+                self.logger.debug("Replacing spec line %i:\n-%s+%s", lineno, line, line2)
+                lines[lineno] = line2
+        if n_match > 0:
+            self.logger.info('Replaced %i lines in spec', n_match)
+        else:
+            self.logger.error('No matches for pattern %r', prog.pattern)
+        # write it back out
+        fo = file(specfile, 'w')
+        fo.writelines(lines)
         fo.close()
 
     def rule_handler_patch(self, data):
