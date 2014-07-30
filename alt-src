@@ -71,6 +71,7 @@ config_defaults = {
     'lookaside' : '/srv/cache/lookaside',
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
     'git_fetch_url' : None,  # None means same as push
+    'push_tags' : False,
     'lookaside_rsync_dest' : '/srv/cache/lookaside2',
     'init_rsync_dest' : '/srv/git/pushtest/%(package)s.git',
     'log_level' : 'INFO',
@@ -92,7 +93,7 @@ config_defaults = {
 }
 
 config_int_opts = set([])
-config_bool_opts = set(['smtp_enabled'])
+config_bool_opts = set(['smtp_enabled', 'push_tags'])
 
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
@@ -316,6 +317,8 @@ class BaseProcessor(object):
 
     def duplicate_check(self):
         """Check to see if we're already on remote"""
+        # XXX Currently mostly useless since we no longer push tags by default
+        # TODO rework this for a non-tagging workflow
         tagname = self.get_import_tagname()
         git_url =  self.git_fetch_url()
         self.logger.debug("Checking remote %s for tag %s", git_url, tagname)
@@ -1515,10 +1518,11 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.checkout)
 
         #tag
-        tagname = self.get_import_tagname()
-        cmd = self.git_base_cmd()
-        cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
-        self.log_cmd(cmd, cwd=self.checkout)
+        if self.options.config['push_tags']:
+            tagname = self.get_import_tagname()
+            cmd = self.git_base_cmd()
+            cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
+            self.log_cmd(cmd, cwd=self.checkout)
 
         if stage_rev != import_rev:
             # grab the rest of the stage branch (debranding)
@@ -1541,8 +1545,9 @@ class Pusher(BaseProcessor):
         # ...and push
         cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
         self.log_cmd(cmd, cwd=self.checkout)
-        cmd = ['git', 'push', git_url, "refs/tags/%s" % tagname]
-        self.log_cmd(cmd, cwd=self.checkout)
+        if self.options.config['push_tags']:
+            cmd = ['git', 'push', git_url, "refs/tags/%s" % tagname]
+            self.log_cmd(cmd, cwd=self.checkout)
 
         #TODO retry loop
 
