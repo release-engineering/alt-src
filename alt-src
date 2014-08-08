@@ -947,7 +947,8 @@ failed to apply.
         cmd = ['git', 'add', 'README.debrand']
         self.log_cmd(cmd, cwd=self.checkout)
         #and commit
-        cmd = ['git', 'commit', '-m', 'Debranding failure notice']
+        cmd = self.git_base_cmd()
+        cmd.extend(['commit', '-m', 'Debranding failure notice'])
         self.log_cmd(cmd, cwd=self.checkout)
 
     def prep_changelog(self, notes):
@@ -1449,7 +1450,9 @@ class Pusher(BaseProcessor):
         # add commit
         relpath = os.path.join('SPECS', os.path.basename(spec))
         self.log_cmd(['git', 'add', relpath], cwd=self.checkout)
-        self.log_cmd(['git', 'commit', '-m', 'add changelog entry'], cwd=self.checkout)
+        cmd = self.git_base_cmd()
+        cmd.extend(['commit', '-m', 'add changelog entry'])
+        self.log_cmd(cmd, cwd=self.checkout)
 
     def push_git(self):
         """Get our checkout ready for the public push"""
