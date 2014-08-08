@@ -1086,16 +1086,20 @@ failed to apply.
         lines = fo.readlines()
         fo.close()
         # find highest patch number and last patch line location
-        patch_re = re.compile(r'^\s*[pP]atch(\d*):\s+(\S+)\s*$')
+        patch_re = re.compile(r'^\s*([pP]atch)(\d*):(\s+)(\S+)\s*$')
         name_re = re.compile(r'^\s*[nN]ame:\s+')
         pnum = -1
         lnum = -1
         lname = -1
+        patch_tag = 'Patch'
+        patch_sep = '\t'
         for lineno, line in enumerate(lines):
             m = patch_re.search(line)
             if m:
                 lnum = lineno
-                pnum = max(pnum, int(m.group(1) or "0"))
+                patch_tag = m.group(1)
+                pnum = max(pnum, int(m.group(2) or "0"))
+                patch_sep = m.group(3)
                 # unnumbered patch equivalent to zero
                 # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if patchnum == pnum:
@@ -1113,7 +1117,7 @@ failed to apply.
             lnum = lname
 
         # insert the PatchNN entry
-        entry = "Patch%d:\t%s\n"  % (patchnum, patchname)
+        entry = "%s%d:%s%s\n"  % (patch_tag, patchnum, patch_sep, patchname)
         self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
         lines.insert(lnum + 1, entry)
 
