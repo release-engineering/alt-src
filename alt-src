@@ -250,6 +250,7 @@ class BaseProcessor(object):
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
         self.version = data['version']
+        self.release = data['release']
         self.summary = data['summary']
 
     def check_package(self):
@@ -991,11 +992,33 @@ failed to apply.
         verrel = output.splitlines()[0]
         return verrel
 
+    branch_re = r'^c([3456789])(?:-.*)?$'
+    dist_re = r'[.]el([3456789])(?:_[0-9]+)?'
+
     def get_mod_macros(self):
-        #TODO
+        # try to determine from branch name
+        prog = re.compile(self.branch_re)
+        m = prog.match(self.options.branch)
+        if m:
+            rhel = m.group(1)
+            return {
+                'dist' : ".el%s.centos" % rhel,
+                'rhel' : rhel,
+            }
+        # try to determine from dist tag
+        prog = re.compile(self.dist_re)
+        m = prog.search(self.release)
+        if m:
+            rhel = m.group(1)
+            return {
+                'dist' : ".el%s.centos" % rhel,
+                'rhel' : rhel,
+            }
+        #otherwise...
         return {
-            "dist" : ".el7.centos", #XXX
-            "rhel" : "7", #XXX
+            "dist" : ".centos",
+            "rhel" : "7",
+            # some specs will fail without a rhel macro
             }
 
     def rule_handler_spec(self, data):
