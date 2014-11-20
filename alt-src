@@ -69,6 +69,7 @@ config_defaults = {
     'stagedir' : '/srv/cache/stage',
     'gitdir' : '/srv/git',
     'rulesdir' : '/var/lib/altsrc/rules',
+    'debrand' : True,
     'lookaside' : '/srv/cache/lookaside',
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
     'git_fetch_url' : None,  # None means same as push
@@ -94,7 +95,7 @@ config_defaults = {
 }
 
 config_int_opts = set([])
-config_bool_opts = set(['smtp_enabled', 'push_tags'])
+config_bool_opts = set(['smtp_enabled', 'push_tags', 'debrand'])
 
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
@@ -266,7 +267,7 @@ class BaseProcessor(object):
             if len(parts) == 1:
                 # no branch pattern
                 ret.append(rule)
-            elif fnmatch.fnmatch(self.options.branch, parts[0])
+            elif fnmatch.fnmatch(self.options.branch, parts[0]):
                 ret.append(parts[1])
         return ret
 
@@ -832,6 +833,9 @@ If you find this file in a distro specific branch, it means that no content has 
         """Apply debranding rules"""
         #search for applicable rules
 
+        if not self.options.config['debrand']:
+            self.logger.warning("Debranding is disabled")
+            return
         cp = ConfigParser.RawConfigParser()
         for name in 'altsrc-global', self.package:
             cfile = os.path.join(self.options.config['rulesdir'], name + '.cfg')
