@@ -577,7 +577,12 @@ class Stager(BaseProcessor):
         git_url =  self.git_fetch_url()
         self.logger.info('Syncing primary repo: %s', repo)
         cmd = ['git', 'fetch', '-v', git_url, '+refs/*:refs/*']
-        self.log_cmd(cmd, cwd=repo)
+        try:
+            self.log_cmd(cmd, cwd=repo)
+        except Exception:
+            self.logger.error('Unable to fetch remote repo')
+            self.logger.error('Local cache exists: %s', repo)
+            raise
 
         # TODO - add sanity checks
 
