@@ -4,6 +4,7 @@ import ConfigParser
 import cStringIO
 import datetime
 import fcntl
+import fnmatch
 import hashlib
 import logging
 import koji
@@ -253,16 +254,34 @@ class BaseProcessor(object):
         self.release = data['release']
         self.summary = data['summary']
 
+    def get_package_filter(self, pfilter):
+        """Parse a black or white list filter and apply branch checks
+
+        Return the part of the filter applicable to current branch
+        """
+
+        ret = []
+        for rule in pfilter.split():
+            parts = rule.split('::', 1)
+            if len(parts) == 1:
+                # no branch pattern
+                ret.append(rule)
+            elif fnmatch.fnmatch(self.options.branch, parts[0])
+                ret.append(parts[1])
+        return ret
+
     def check_package(self):
         """Check whitelist/blacklist and load any package rules"""
 
-        whitelist = self.options.config['whitelist'].split()
+        whitelist = self.get_package_filter(self.options.config['whitelist'])
+        self.logger.debug("Got whitelist: %r", whitelist)
         if whitelist:
             whitelisted = koji.util.multi_fnmatch(self.package, whitelist)
         else:
             whitelisted = False
         if not whitelisted:
-            blacklist = self.options.config['blacklist'].split()
+            blacklist = self.get_package_filter(self.options.config['blacklist'])
+            self.logger.debug("Got blacklist: %r", blacklist)
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
                 raise FilterError, 'Blacklisted package: %s' % self.package
 
