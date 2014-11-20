@@ -71,7 +71,7 @@ config_defaults = {
     'lookaside' : '/srv/cache/lookaside',
     'git_push_url' : '/srv/git/pushtest/%(package)s.git',
     'git_fetch_url' : None,  # None means same as push
-    'push_tags' : False,
+    'push_tags' : True,
     'lookaside_rsync_dest' : '/srv/cache/lookaside2',
     'init_rsync_dest' : '/srv/git/pushtest/%(package)s.git',
     'log_level' : 'INFO',
@@ -317,7 +317,7 @@ class BaseProcessor(object):
 
     def duplicate_check(self):
         """Check to see if we're already on remote"""
-        # XXX Currently mostly useless since we no longer push tags by default
+        # XXX Currently mostly useless if push_tags is disabled
         # TODO rework this for a non-tagging workflow
         tagname = self.get_import_tagname()
         git_url =  self.git_fetch_url()
