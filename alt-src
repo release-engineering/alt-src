@@ -47,6 +47,8 @@ def get_options():
                       help=_("show debug output"))
     parser.add_option("--restage", action="store_true", default=False,
                       help=_("remove and recreate staged content"))
+    parser.add_option("--repush", action="store_true", default=False,
+                      help=_("push content even if it appears to be present already"))
     parser.add_option("--push", action="store_true", default=False,
                       help=_("push staged sources"))
     parser.add_option("--brew", action="store_true", default=False,
@@ -510,7 +512,7 @@ class Stager(BaseProcessor):
         self.add_error_logger()
         self.read_srpm()
         self.check_package()
-        if self.duplicate_check():
+        if self.duplicate_check() and not self.options.repush:
             self.logger.warning('Skipping staging for duplicate content')
             return
         if self.make_workdir() in ['STAGED', 'PUSHED']:
@@ -1423,7 +1425,7 @@ class Pusher(BaseProcessor):
         self.add_error_logger()
         self.read_srpm()
         self.check_package()
-        if self.duplicate_check():
+        if self.duplicate_check() and not self.options.repush:
             self.logger.warning('Skipping push for duplicate content')
             return
         if self.check_workdir() == 'PUSHED':
