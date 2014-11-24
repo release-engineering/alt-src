@@ -81,6 +81,7 @@ config_defaults = {
     'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
     'whitelist' : '',
     'blacklist' : '',
+    'commit_format' : 'import %(nvr)s',
     'changelog_user' : 'CentOS Sources <bugs@centos.org>',
     'git_name' : 'CentOS Sources',
     'git_email' : 'bugs@centos.org',
@@ -789,7 +790,10 @@ If you find this file in a distro specific branch, it means that no content has 
         # if we're called again for some reason the commit will fail
 
         cmd = self.git_base_cmd()
-        cmd.extend(['commit', '-m', 'import %s' % self.nvr])
+        msg_data = koji.util.dslice(vars(self), ['nvr', 'package', 'version', 'release', 'summary'])
+        msg_data['branch'] = self.options.branch
+        commit_msg = self.options.config['commit_format'] % msg_data
+        cmd.extend(['commit', '-m', commit_msg])
         self.log_cmd(cmd, cwd=dst)
         self.set_state("IMPORT")
 
@@ -1564,7 +1568,10 @@ class Pusher(BaseProcessor):
 
         #commit
         cmd = self.git_base_cmd()
-        cmd.extend(['commit', '-m', 'import %s' % self.nvr])
+        msg_data = koji.util.dslice(vars(self), ['nvr', 'package', 'version', 'release', 'summary'])
+        msg_data['branch'] = self.options.branch
+        commit_msg = self.options.config['commit_format'] % msg_data
+        cmd.extend(['commit', '-m', commit_msg])
         #XXX need a better commit message
         self.log_cmd(cmd, cwd=self.checkout)
 
