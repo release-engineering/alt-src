@@ -186,6 +186,20 @@ class BaseProcessor(object):
     def remove_error_logger(self):
         self.logger.removeHandler(self.error_handler)
 
+    def setup_logfile(self, logname):
+        if not os.path.isdir(self.workdir):
+            raise SanityError, "Work dir does not exist: %s" % self.workdir
+        self.logfile = file(os.path.join(self.workdir, logname), 'w')
+        handler = logging.StreamHandler(self.logfile)
+        handler.setFormatter(logging.Formatter(self.options.config['log_format']))
+        handler.setLevel(self.options.file_log_level)
+        self.logfile_handler = handler
+        self.logger.addHandler(handler)
+
+    def close_logfile(self):
+        self.logger.removeHandler(self.logfile_handler)
+        self.logfile.close()
+
     def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
         """Run command and log output if able"""
         self.logger.info('Running command: %s', ' '.join(cmd))
@@ -517,7 +531,7 @@ class Stager(BaseProcessor):
             return
         if self.make_workdir() in ['STAGED', 'PUSHED']:
             return
-        self.setup_logfile()
+        self.setup_logfile('stage.log')
         self.sync_repo()
         self.setup_checkout()
         self.import_srpm()
@@ -531,6 +545,7 @@ class Stager(BaseProcessor):
         self.set_state("STAGED")
         self.notify()
         self.remove_error_logger()
+        self.close_logfile()
 
     def make_workdir(self):
         self.workdir = dirname = self.get_workdir()
@@ -557,14 +572,6 @@ class Stager(BaseProcessor):
         self.logger.info('Creating working directory: %s', dirname)
         koji.ensuredir(dirname)
         return self.set_state("INIT")
-
-    def setup_logfile(self):
-        self.logfile = file(os.path.join(self.workdir, 'stage.log'), 'w')
-        handler = logging.StreamHandler(self.logfile)
-        handler.setFormatter(logging.Formatter(self.options.config['log_format']))
-        handler.setLevel(self.options.file_log_level)
-        self.logger.addHandler(handler)
-
 
     def sync_repo(self):
         """Sync the primary (bare) git repo from the (local) master"""
@@ -1430,13 +1437,14 @@ class Pusher(BaseProcessor):
             return
         if self.check_workdir() == 'PUSHED':
             return
-        self.setup_logfile()
+        self.setup_logfile('push.log')
         self.add_changelog()
         self.push_lookaside()
         self.push_git()
         self.set_state('PUSHED')
         self.notify()
         self.remove_error_logger()
+        self.close_logfile()
 
 
     def check_workdir(self):
@@ -1454,15 +1462,6 @@ class Pusher(BaseProcessor):
             raise SanityError, "Staging incomplete"
         self.checkout = os.path.join(self.workdir, "checkout")
         return state
-
-
-
-    def setup_logfile(self):
-        self.logfile = file(os.path.join(self.workdir, 'push.log'), 'w')
-        handler = logging.StreamHandler(self.logfile)
-        handler.setFormatter(logging.Formatter(self.options.config['log_format']))
-        handler.setLevel(self.options.file_log_level)
-        self.logger.addHandler(handler)
 
     def add_changelog(self):
         """Check for a prepared changelog entry and add to spec if found"""
