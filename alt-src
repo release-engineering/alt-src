@@ -206,7 +206,10 @@ class BaseProcessor(object):
 
     def close_logfile(self):
         self.logger.removeHandler(self.logfile_handler)
-        self.logfile.close()
+        del self.logfile_handler
+        logfile = self.logfile
+        self.logfile = None
+        logfile.close()
 
     def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
         """Run command and log output if able"""
