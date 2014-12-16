@@ -189,7 +189,15 @@ class BaseProcessor(object):
     def setup_logfile(self, logname):
         if not os.path.isdir(self.workdir):
             raise SanityError, "Work dir does not exist: %s" % self.workdir
-        self.logfile = file(os.path.join(self.workdir, logname), 'w')
+        fn = fn_ = os.path.join(self.workdir, logname)
+        n = 0
+        while os.path.exists(fn):
+            # don't overwrite an old logfile
+            n += 1
+            if n > 1024:
+                raise SanityError, "Too many log backups"
+            fn = "%s.%d" % (fn_, n)
+        self.logfile = file(fn, 'w')
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(self.options.file_log_level)
