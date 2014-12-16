@@ -209,7 +209,9 @@ class BaseProcessor(object):
         del self.logfile_handler
         logfile = self.logfile
         self.logfile = None
-        logfile.close()
+        logfile.flush()
+        #logfile.close()
+        # looks like some versions of logger module are poorly behaved, so we don't explicitly close
 
     def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
         """Run command and log output if able"""
