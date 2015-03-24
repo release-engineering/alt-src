@@ -897,9 +897,6 @@ If you find this file in a distro specific branch, it means that no content has 
             if not hasattr(self, handler):
                 raise ConfigError, "No handler for rule type %s" % rtype
             data = dict(cp.items(section))
-            clog_note = data.get('changelog')
-            if clog_note:
-                changelog_notes.append(clog_note)
             if 'enabled' in data:
                 enabled = data['enabled'].lower().strip()
                 if enabled in ('no', 'false', '0'):
@@ -921,6 +918,9 @@ If you find this file in a distro specific branch, it means that no content has 
                     self.logger.debug('Skipping rule due to branch filter: %s', section)
                     continue
             self.logger.info("Applying rule: %s", section)
+            clog_note = data.get('changelog')
+            if clog_note:
+                changelog_notes.append(clog_note)
             can_fail = False
             if data.get('can_fail', '').lower() in ('yes', 'y', '1', 'true'):
                 can_fail = True
