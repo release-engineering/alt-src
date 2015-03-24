@@ -317,14 +317,14 @@ class BaseProcessor(object):
                 raise FilterError, 'Blacklisted package: %s' % self.package
 
     def git_push_url(self):
-        params = {'package': self.package }  #XXX anything else?
+        params = {'package': self.package }
         git_url =  self.options.config['git_push_url'] % params
         return git_url
 
     def git_fetch_url(self):
         url_form = (self.options.config['git_fetch_url']
                     or self.options.config['git_push_url'])
-        params = {'package': self.package }  #XXX anything else?
+        params = {'package': self.package }
         git_url =  url_form % params
         return git_url
 
@@ -759,7 +759,6 @@ If you find this file in a distro specific branch, it means that no content has 
             return False
         #lastly, see what the file utility says
         cmd = ['file', '--brief', path]
-        # XXX should we use --mime instead?
         output, rv = self.get_output(cmd, stderr='keep', fatal=False)
         if rv:
             #nonfatal
@@ -830,7 +829,6 @@ If you find this file in a distro specific branch, it means that no content has 
         """Calculate hex digest for file"""
 
         csum = hashlib.sha1()
-        # XXX should we move to something stronger?
         fo = file(path, 'rb')
         chunk = 'IGNORE ME!'
         while chunk:
@@ -843,7 +841,6 @@ If you find this file in a distro specific branch, it means that no content has 
         """Copy file to lookaside"""
 
         dirname = os.path.join(self.options.config['lookaside'], self.package, self.options.branch)
-        # XXX - using Centos/nazar path for now, may need to change
         lpath = os.path.join(dirname, digest)
         if not os.path.isfile(lpath):
             koji.ensuredir(dirname)
@@ -1586,7 +1583,6 @@ class Pusher(BaseProcessor):
         msg_data['branch'] = self.options.branch
         commit_msg = self.options.config['commit_format'] % msg_data
         cmd.extend(['commit', '-m', commit_msg])
-        #XXX need a better commit message
         self.log_cmd(cmd, cwd=self.checkout)
 
         #tag
@@ -1627,7 +1623,7 @@ class Pusher(BaseProcessor):
         # we should have a base repo staged here
         src = os.path.join(self.workdir, "repo_init.git/")
         # note the trailing slash for rsync arg
-        params = {'package': self.package }  #XXX anything else?
+        params = {'package': self.package }
         dst = self.options.config['init_rsync_dest'] % params
         cmd = ['rsync', '-ivrpt', src, dst]
         self.log_cmd(cmd, cwd=self.workdir)
