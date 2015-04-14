@@ -1164,10 +1164,10 @@ failed to apply.
         fo.close()
         # find highest patch number and last patch line location
         patch_re = re.compile(r'^\s*([pP]atch)(\d*):(\s+)(\S+)\s*$')
-        name_re = re.compile(r'^\s*[nN]ame:\s+')
+        alt_re = re.compile(r'(?i)^\s*(?:name|version|release|source\d*):\s+')
         pnum = -1
         lnum = -1
-        lname = -1
+        l_alt = -1
         patch_tag = 'Patch'
         patch_sep = '\t'
         for lineno, line in enumerate(lines):
@@ -1182,8 +1182,8 @@ failed to apply.
                 if patchnum == pnum:
                     self.logger.error("Patch %s already present: %s", patchnum, line)
                     raise SanityError, "Duplicate patch number"
-            elif name_re.search(line):
-                lname = lineno
+            elif alt_re.search(line):
+                l_alt = lineno
         if patchnum == -1:
             if lnum == -1:
                 # no existing patches
@@ -1191,7 +1191,7 @@ failed to apply.
             else:
                 patchnum = pnum + 1
         if lnum == -1:
-            lnum = lname
+            lnum = l_alt
 
         # insert the PatchNN entry
         entry = "%s%d:%s%s\n"  % (patch_tag, patchnum, patch_sep, patchname)
