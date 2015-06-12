@@ -336,6 +336,8 @@ class BaseProcessor(object):
         return cmd
 
     def get_workdir(self):
+        if not os.path.isdir(self.options.config['stagedir']):
+            raise SanityError("stagedir is missing: %s" % self.options.config['stagedir'])
         letter = self.package[0]
         if not letter.isalpha():
             letter = "_"
@@ -347,7 +349,9 @@ class BaseProcessor(object):
             self.nvr,
         ]
         # branch included in the path because debranding rules can depend on it
-        return os.path.join(*parts)
+        ret = os.path.join(*parts)
+        koji.ensuredir(ret)
+        return ret
 
     def find_spec(self, relative=False):
         """Locate specfile in checkout"""
