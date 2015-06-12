@@ -989,7 +989,7 @@ If you find this file in a distro specific branch, it means that no content has 
         tagname = "altsrc-stage-import-%s" % self.options.branch
         tagname = self.sanitize_ref_segment(tagname)
         self.logger.info("Logging changes to be reverted")
-        self.log_cmd(['git', 'diff', tagname], cwd=self.checkout)
+        self.log_cmd(['git', 'diff', '-a', tagname], cwd=self.checkout)
         cmd = ['git', 'reset', '--hard', "refs/tags/%s" % tagname]
         self.log_cmd(cmd, cwd=self.checkout)
         cmd = ['git', 'clean', '-f']
@@ -1101,7 +1101,10 @@ failed to apply.
 
         if data.get('mode') == 'line':
             self.handle_re_line(data)
-        fn = self.find_spec()
+        if 'file' in data:
+            fn = os.path.join(self.checkout, data['file'])
+        else:
+            fn = self.find_spec()
         fo = file(fn, 'r')
         text = fo.read()
         fo.close()
@@ -1115,8 +1118,12 @@ failed to apply.
         fo.close()
 
     def handle_re_line(self, data):
-        specfile = self.find_spec()
-        fo = file(specfile, 'r')
+        if 'file' in data:
+            fn = os.path.join(self.checkout, data['file'])
+        else:
+            fn = self.find_spec()
+        self.logger.info('Applying regex substitutions to %s', fn)
+        fo = file(fn, 'r')
         lines = fo.readlines()
         fo.close()
         prog = re.compile(data['match'])
@@ -1133,14 +1140,14 @@ failed to apply.
                 line2, n = prog.subn(data['replace'], line)
             n_match += n
             if n > 0:
-                self.logger.debug("Replacing spec line %i:\n-%s+%s", lineno, line, line2)
+                self.logger.debug("Replacing line %i:\n-%s+%s", lineno, line, line2)
                 lines[lineno] = line2
         if n_match > 0:
-            self.logger.info('Replaced %i lines in spec', n_match)
+            self.logger.info('Replaced %i lines', n_match)
         else:
             self.logger.error('No matches for pattern %r', prog.pattern)
         # write it back out
-        fo = file(specfile, 'w')
+        fo = file(fn, 'w')
         fo.writelines(lines)
         fo.close()
 
