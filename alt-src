@@ -349,9 +349,7 @@ class BaseProcessor(object):
             self.nvr,
         ]
         # branch included in the path because debranding rules can depend on it
-        ret = os.path.join(*parts)
-        koji.ensuredir(ret)
-        return ret
+        return os.path.join(*parts)
 
     def find_spec(self, relative=False):
         """Locate specfile in checkout"""
@@ -566,6 +564,7 @@ class Stager(BaseProcessor):
 
     def make_workdir(self):
         self.workdir = dirname = self.get_workdir()
+        koji.ensuredir(os.path.dirname(self.workdir))
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
         elif os.path.isdir(dirname):
