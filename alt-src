@@ -1212,7 +1212,26 @@ failed to apply.
         self.copy_new_source(patchfile)
 
         # add the entry for applying
-        if data.get('apply', 'y').lower() in ('y', 'yes', '1', 'true'):
+        if data.get('apply', '') == 'kernel-optional':
+            entry = "ApplyOptionalPatch %s\n"  % patchname
+            apply_re = re.compile(r'^\s*ApplyOptionalPatch\s+\w')
+            setup_re = re.compile(r'\s*%setup\b')
+            alt_re = re.compile(r'Any further pre-build tree manipulations happen here')
+            lnum = -1
+            for lineno, line in enumerate(lines):
+                if apply_re.search(line):
+                    lnum = lineno
+                elif lnum < 0 and setup_re.search(line):
+                    lnum = lineno
+                elif lnum < 0 and alt_re.search(line):
+                    lnum = lineno
+            if lnum > -1:
+                # after last ApplyOptionalPatch line
+                lines.insert(lnum + 1, entry)
+                self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
+            else:
+                raise SanityError, "Unable to apply patch %s" % patchname
+        elif data.get('apply', 'y').lower() in ('y', 'yes', '1', 'true'):
             entry = "%%patch%d -p%d\n" % (patchnum, patchstrip)
             apply_re = re.compile(r'^\s*%patch\d+\s+-p\d')
             auto_re = re.compile(r'^\s*%autosetup\b')
@@ -1238,6 +1257,8 @@ failed to apply.
                 # after first %setup line
                 lines.insert(lsetup + 1, entry)
                 self.logger.debug("Inserting spec line: %i: %s", lsetup+1, entry)
+            else:
+                raise SanityError, "Unable to apply patch %s" % patchname
 
         # write it back out
         fo = file(specfile, 'w')
