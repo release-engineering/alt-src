@@ -314,7 +314,9 @@ class BaseProcessor(object):
             blacklist = self.get_package_filter(self.options.config['blacklist'])
             self.logger.debug("Got blacklist: %r", blacklist)
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
-                raise FilterError, 'Blacklisted package: %s' % self.package
+                # raise FilterError, 'Blacklisted package: %s' % self.package
+                print 'Blacklisted package: %s, quitting' % self.package
+                sys.exit(0)
 
     def git_push_url(self):
         params = {'package': self.package }
@@ -1777,7 +1779,11 @@ def main():
         try:
             task.run()
             task.notify_errors()
-        except (SystemExit, KeyboardInterrupt), e:
+        except SystemExit, exc:
+            msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
+            logger.warn("Exiting (%s)", msg)
+            raise
+        except KeyboardInterrupt, e:
             msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
             logger.warn("Exiting (%s)", msg)
             sys.exit(1)
