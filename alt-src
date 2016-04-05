@@ -87,7 +87,7 @@ config_defaults = {
     'changelog_user' : 'CentOS Sources <bugs@centos.org>',
     'git_name' : 'CentOS Sources',
     'git_email' : 'bugs@centos.org',
-    'koji_hub' : 'http://brewhub.devel.redhat.com/brewhub',
+    'koji_hub' : 'https://brewhub.engineering.redhat.com/brewhub',
     'koji_topdir' : '/mnt/redhat/brewroot',
     'smtp_enabled' : True,
     'smtp_host' : 'localhost',
