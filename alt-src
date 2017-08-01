@@ -170,6 +170,8 @@ class BaseProcessor(object):
             raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
         self.workdir = None
+        self.nvr = "UNKNOWN"
+        self.package = "UNKNOWN"
 
     def run(self):
         raise NotImplementedError
@@ -1039,7 +1041,8 @@ failed to apply.
     def get_modded_verrel(self):
         spec = self.find_spec()
         macros = self.get_mod_macros()
-        cmd = ['rpm', '-q', '--specfile', spec]
+        cmd = ['rpm', '-q', '--specfile', spec,
+                '--define', '_topdir %s' % self.checkout]
         for m in macros:
             cmd.extend(['--define', '%s %s' % (m, macros[m])])
         cmd.extend([

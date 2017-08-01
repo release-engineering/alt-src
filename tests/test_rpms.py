@@ -16,7 +16,7 @@ SRC_PATH = os.path.dirname(TESTS_PATH)
 ALT_SRC = os.path.join(SRC_PATH, 'alt-src')
 
 DEBRAND_XFAIL = [
-    'grub2-2.02-0.64.el7.src.rpm',  # DELIVERY-3192
+    # list any RPMs where debrand is expected to fail here
 ]
 
 
