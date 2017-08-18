@@ -1,0 +1,26 @@
+#!/bin/sh
+#
+# Designed for running in Content Delivery Jenkins:
+# https://docs.engineering.redhat.com/x/5my7Ag
+
+JOB_NAME="$(basename "$0")"
+CI_VIRTUALENV="$(dirname "$0")/virtualenv-${JOB_NAME}"
+PROJECT_DIR="$(dirname "$0")/../.."
+
+run(){
+  cd "$PROJECT_DIR"
+  virtualenv "$CI_VIRTUALENV"
+
+  set +x
+  . "$CI_VIRTUALENV/bin/activate"
+  set -x
+
+  pip install --upgrade pip
+
+  pip install -r test-requirements.txt
+  py.test "$@"
+}
+
+set -xe
+
+run "$@"

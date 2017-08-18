@@ -1,0 +1,14 @@
+diff --git a/SPECS/grub2.spec b/SPECS/grub2.spec
+index 1979c80..6865221 100644
+--- a/SPECS/grub2.spec
++++ b/SPECS/grub2.spec
+@@ -33,6 +33,9 @@
+ %if 0%{?fedora}
+ %global efidir fedora
+ %endif
++%if 0%{?centos}
++%global efidir centos
++%endif
+ 
+ %endif
+ 
