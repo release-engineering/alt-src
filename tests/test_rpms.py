@@ -1,3 +1,4 @@
+import re
 import shutil
 import tempfile
 import os
@@ -151,3 +152,180 @@ def test_push_with_debrand(config_file, pushdir, lookasidedir,
     lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
+
+
+@pytest.mark.parametrize('branch,name,version,release', [
+    ('c7', 'grub2', '2.02', '0.64.el7'),
+    ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
+])
+def test_repush_with_staged_data(config_file, pushdir, lookasidedir,
+                           branch, name, version, release):
+    """Push once, the push again. The script should warn, but not error"""
+
+    rpm = '-'.join([name, version, release]) +  '.src.rpm'
+
+    command = [
+        ALT_SRC,
+        '-v',
+        '-c', config_file,
+        '--push',
+        branch,
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    # push once
+    proc = Popen(command, stdout=PIPE, stderr=STDOUT)
+    proc.communicate()
+
+    # run same push again
+    proc = Popen(command, stdout=PIPE, stderr=STDOUT)
+    out, _ = proc.communicate()
+
+    # It should complete with 0 exit code
+    assert_that(proc.returncode, equal_to(0), 'failed with output:\n%s' % out)
+
+    out_lines = out.splitlines()
+
+    try:
+        # It should not have logged any ERROR
+        errors = [line for line in out_lines if '[ERROR]' in line]
+        assert_that(errors, empty(), 'failed with output:\n%s' % out)
+
+        # There should be a debrand commit
+        subject = git_subject('%s/%s.git' % (pushdir, name), branch)
+        expected_subject = 'debrand %s-%s-%s' % (name, version, release)
+        assert_that(subject, equal_to(expected_subject))
+    except AssertionError:
+        if rpm not in DEBRAND_XFAIL:
+            raise
+    else:
+        assert_that(rpm not in DEBRAND_XFAIL,
+                    'RPM was expected to fail debranding, but passed')
+
+    # It should have logged a WARNING about duplicate content
+    w_expect = '[WARNING] Skipping push for duplicate content'
+    assert [l for l in out_lines if w_expect in l]
+
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))
+
+
+@pytest.mark.parametrize('branch,name,version,release', [
+    ('c7', 'grub2', '2.02', '0.64.el7'),
+    ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
+])
+def test_repush_without_staged_data(config_file, pushdir, lookasidedir,
+                           branch, name, version, release, default_config):
+    """Push, clear stage, push again. The script should warn, but not error"""
+
+    rpm = '-'.join([name, version, release]) +  '.src.rpm'
+
+    command = [
+        ALT_SRC,
+        '-v',
+        '-c', config_file,
+        '--push',
+        branch,
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    # push once
+    proc = Popen(command, stdout=PIPE, stderr=STDOUT)
+    proc.communicate()
+
+    # clear stage
+    stagedir = default_config['stagedir']
+    for fn in os.listdir(stagedir):
+        shutil.rmtree("%s/%s" % (stagedir, fn))
+
+    # run same push again
+    proc = Popen(command, stdout=PIPE, stderr=STDOUT)
+    out, _ = proc.communicate()
+
+    # It should complete with 0 exit code
+    assert_that(proc.returncode, equal_to(0), 'failed with output:\n%s' % out)
+
+    out_lines = out.splitlines()
+
+    try:
+        # It should not have logged any ERROR
+        errors = [line for line in out_lines if '[ERROR]' in line]
+        assert_that(errors, empty(), 'failed with output:\n%s' % out)
+
+        # There should be a debrand commit
+        subject = git_subject('%s/%s.git' % (pushdir, name), branch)
+        expected_subject = 'debrand %s-%s-%s' % (name, version, release)
+        assert_that(subject, equal_to(expected_subject))
+    except AssertionError:
+        if rpm not in DEBRAND_XFAIL:
+            raise
+    else:
+        assert_that(rpm not in DEBRAND_XFAIL,
+                    'RPM was expected to fail debranding, but passed')
+
+    # It should have logged a WARNING about duplicate content
+    w_expect = '[WARNING] Skipping push for duplicate content'
+    assert [l for l in out_lines if w_expect in l]
+
+    # It should also warn about the existing tag
+    w_expect = re.compile('\[WARNING\] Tag imports/.* already present on remote')
+    assert [l for l in out_lines if w_expect.search(l)]
+
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))
+
+
+@pytest.mark.parametrize('branch,name,version,release', [
+    ('c7', 'fake', '1.1', '22'),
+    # need no-debrand packages for this test
+])
+def test_repush_without_tag(config_file, pushdir, lookasidedir,
+                           branch, name, version, release, default_config):
+    """Push (no tag), clear stage, push again. Should warn, but not error"""
+
+    rpm = '-'.join([name, version, release]) +  '.src.rpm'
+
+    command = [
+        ALT_SRC,
+        '-v',
+        '-c', config_file,
+        '-o', 'push_tags=no',
+        '--push',
+        branch,
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    # push once
+    proc = Popen(command, stdout=PIPE, stderr=STDOUT)
+    proc.communicate()
+
+    # clear stage
+    stagedir = default_config['stagedir']
+    for fn in os.listdir(stagedir):
+        shutil.rmtree("%s/%s" % (stagedir, fn))
+
+    # we need gitdir to exist
+    os.makedirs(default_config['gitdir'])
+
+    # run same push again
+    proc = Popen(command, stdout=PIPE, stderr=STDOUT)
+    out, _ = proc.communicate()
+
+    # It should complete with 0 exit code
+    assert_that(proc.returncode, equal_to(0), 'failed with output:\n%s' % out)
+
+    out_lines = out.splitlines()
+
+    # It should not have logged any ERROR
+    errors = [line for line in out_lines if '[ERROR]' in line]
+    assert_that(errors, empty(), 'failed with output:\n%s' % out)
+
+    # It should have logged a WARNING that rpm was already pushed
+    w_expect = '[WARNING] Already pushed'
+    dupwarn = [l for l in out_lines if w_expect in l]

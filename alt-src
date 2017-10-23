@@ -154,6 +154,8 @@ class SanityError(StageError):
 class ConfigError(StageError):
     pass
 
+class UntaggedDuplicate(Exception):
+    """We use this to signal late duplicate detection"""
 
 
 class BaseProcessor(object):
@@ -553,7 +555,11 @@ class Stager(BaseProcessor):
         self.setup_logfile('stage.log')
         self.sync_repo()
         self.setup_checkout()
-        self.import_srpm()
+        try:
+            self.import_srpm()
+        except UntaggedDuplicate:
+            self.set_state('PUSHED')
+            return
         try:
             self.debrand()
         except (SystemExit, KeyboardInterrupt):
@@ -776,9 +782,17 @@ If you find this file in a distro specific branch, it means that no content has 
     def import_srpm(self):
         """Import our srpm on the specified branch"""
 
-        #explode our srpm
+        # clear our checkout dir
         dst = self.checkout
         wipe_git_dir(dst)
+        # confirm that the directory is wiped, because in the duplicate check
+        # below, we want to be sure that the duplicate content really came
+        # from our exploded srpm
+        for fn in os.listdir(dst):
+            if fn != '.git':
+                raise SanityError('Failed to clear checkout')
+
+        #explode our srpm
         self.logfile.flush()
         explode_srpm(self.srpm, dst, logfile=self.logfile)
 
@@ -814,8 +828,11 @@ If you find this file in a distro specific branch, it means that no content has 
         cmd = ['git', 'diff', '--cached', '--name-only']
         output, rv = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
         if not output:
-            raise SanityError, "Nothing to commit. Already pushed?"
-        # if we're called again for some reason the commit will fail
+            # This means our exploded srpm matched the last commit exactly
+            cmd = self.git_base_cmd() + ['show', '-s', '--format=%h %s']
+            output, rv = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
+            self.logger.warning('Source matches last commit: %s', output)
+            raise UntaggedDuplicate
 
         cmd = self.git_base_cmd()
         msg_data = koji.util.dslice(vars(self), ['nvr', 'package', 'version', 'release', 'summary'])
