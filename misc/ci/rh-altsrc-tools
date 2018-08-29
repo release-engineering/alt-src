@@ -9,7 +9,7 @@ PROJECT_DIR="$(dirname "$0")/../.."
 
 run(){
   cd "$PROJECT_DIR"
-  virtualenv "$CI_VIRTUALENV"
+  virtualenv --system-site-packages "$CI_VIRTUALENV"
 
   set +x
   . "$CI_VIRTUALENV/bin/activate"

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import ConfigParser
 import cStringIO
@@ -25,47 +25,6 @@ import traceback
 '''
 Given an srpm and product, stage for alt-src release
 '''
-
-
-def _(args):
-    """Stub function for translation"""
-    return args
-
-
-def get_options():
-    """process options from command line"""
-
-    usage = _("%prog [options] branch srpm")
-    parser = OptionParser(usage=usage)
-    parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
-                      help=_("use alternate configuration file"), metavar="FILE")
-    parser.add_option("-v", "--verbose", action="store_true", default=False,
-                      help=_("be more verbose"))
-    parser.add_option("-q", "--quiet", action="store_true", default=False,
-                      help=_("be less verbose"))
-    parser.add_option("-d", "--debug", action="store_true", default=False,
-                      help=_("show debug output"))
-    parser.add_option("--restage", action="store_true", default=False,
-                      help=_("remove and recreate staged content"))
-    parser.add_option("--repush", action="store_true", default=False,
-                      help=_("push content even if it appears to be present already"))
-    parser.add_option("--push", action="store_true", default=False,
-                      help=_("push staged sources"))
-    parser.add_option("--brew", action="store_true", default=False,
-                      help=_("pull sources from Brew"))
-    parser.add_option("--keep-sources", action="store_true", default=False,
-                      help=_("keep lookaside sources in staging checkout"))
-    parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
-                      help=_("set config option"))
-    (options, args) = parser.parse_args()
-
-    options.branch = args[0]
-    options.source = args[1]
-
-    options.config = get_config(options.cfile, options.copts)
-
-    return options
-
 
 config_defaults = {
     'stagedir' : '/srv/cache/stage',
@@ -1772,7 +1731,7 @@ def setup_logging(options):
     options.file_log_level = file_log_level
 
     # set up handlers
-    handler = logging.StreamHandler(sys.stderr)
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter(options.config['log_format']))
     handler.setLevel(output_log_level)
     logger.addHandler(handler)
@@ -1781,6 +1740,7 @@ def setup_logging(options):
         handler.setFormatter(logging.Formatter(options.config['log_format']))
         handler.setLevel(file_log_level)
         logger.addHandler(handler)
+        handlers.append(handler)
     # TODO - setup koji's logger?
 
     if config_warning:
@@ -1788,8 +1748,43 @@ def setup_logging(options):
     return logger
 
 
-def main():
-    options = get_options()
+def _(args):
+    """Stub function for translation"""
+    return args
+
+
+def main(args):
+    """process options from command line"""
+
+    usage = _("%prog [options] branch srpm")
+    parser = OptionParser(usage=usage)
+    parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
+                      help=_("use alternate configuration file"), metavar="FILE")
+    parser.add_option("-v", "--verbose", action="store_true", default=False,
+                      help=_("be more verbose"))
+    parser.add_option("-q", "--quiet", action="store_true", default=False,
+                      help=_("be less verbose"))
+    parser.add_option("-d", "--debug", action="store_true", default=False,
+                      help=_("show debug output"))
+    parser.add_option("--restage", action="store_true", default=False,
+                      help=_("remove and recreate staged content"))
+    parser.add_option("--repush", action="store_true", default=False,
+                      help=_("push content even if it appears to be present already"))
+    parser.add_option("--push", action="store_true", default=False,
+                      help=_("push staged sources"))
+    parser.add_option("--brew", action="store_true", default=False,
+                      help=_("pull sources from Brew"))
+    parser.add_option("--keep-sources", action="store_true", default=False,
+                      help=_("keep lookaside sources in staging checkout"))
+    parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
+                      help=_("set config option"))
+    (options, args) = parser.parse_args(args)
+
+    options.branch = args[0]
+    options.source = args[1]
+
+    options.config = get_config(options.cfile, options.copts)
+
     logger = setup_logging(options)
     tasks = [Stager(options)]
     # always run stager. it's a no-op if already staged
@@ -1812,6 +1807,6 @@ def main():
             sys.exit(2)
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
 
 # the end
