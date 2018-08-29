@@ -3,7 +3,8 @@ import shutil
 import tempfile
 import os
 import logging
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT, check_call
+from mock import patch
 
 from ConfigParser import RawConfigParser
 
@@ -305,3 +306,82 @@ def test_repush_without_tag(config_file, pushdir, lookasidedir, branch,
     # It should have logged a WARNING that rpm was already pushed
     w_expect = '[WARNING] Already pushed'
     dupwarn = [l for l in out_lines if w_expect in l]
+    assert dupwarn
+
+
+def test_repush_with_state_init(config_file, pushdir, lookasidedir, default_config, capsys):
+
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    # call once, fail the task in staging process, the state ends with INIT
+    with patch("tests.test_import.alt_src.Stager.setup_checkout", autospec=True, side_effect=RuntimeError):
+        assert_that(calling(main).with_args(options), exits(2))
+    # remove handlers
+    remove_handlers()
+
+    # clear out/err
+    capsys.readouterr()
+    # call main again to push
+    assert_that(calling(main).with_args(options), exits(0))
+
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+
+    assert_that(len(err), equal_to(0))
+    expected = "[WARNING] Incomplete staging dir %s/c7/g/grub2/grub2-2.02-0.64.el7 (state=INIT), \
+will overwrite." % default_config['stagedir']
+    assert [l for l in out_lines if expected in l]
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))
+
+
+def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_config, capsys):
+
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    with patch("tests.test_import.alt_src.Pusher.push_git", autospec=True, side_effect=RuntimeError):
+        assert_that(calling(main).with_args(options), exits(2))
+
+    # before push again, we need to change the branch to some unkown branch
+    # to simulate what would happen in push_git
+    cmd = 'git checkout -b arandombranch'
+    checkout = default_config['stagedir']+'/c7/g/grub2/grub2-2.02-0.64.el7/checkout'
+    check_call(cmd.split(), cwd=checkout)
+
+    # remove handlers to avoid duplicate logs/errors
+    remove_handlers()
+    # clear the out/err from last main call
+    capsys.readouterr()
+
+    assert_that(calling(main).with_args(options), exits(0))
+
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+    assert_that(len(err), equal_to(0))
+
+    expected = '[WARNING] Already successfully staged: %s/c7/g/grub2/grub2-2.02-0.64.el7' % default_config['stagedir']
+    assert [l for l in out_lines if expected in l]
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))

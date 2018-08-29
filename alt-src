@@ -546,12 +546,16 @@ class Stager(BaseProcessor):
                 state = self.get_state()
                 if state == 'STAGED':
                     self.logger.warn("Already successfully staged: %s",  dirname)
+                    self.logger.info("Checkout to desired branch: %s", self.options.branch)
+                    self.do_checkout()
                     return state
                 elif state == 'PUSHED':
                     self.logger.warn("Already successfully pushed: %s",  dirname)
                     return state
-                raise SanityError, "Incomplete staging dir %s (state=%s), use --restage to overwrite." \
-                        % (dirname, state)
+                else:
+                    self.logger.warn("Incomplete staging dir %s (state=%s), \
+will overwrite." % (dirname, state))
+                    koji.util.rmtree(dirname)
         elif os.path.exists(dirname):
             raise SanityError, "%s exists and is not a directory" % dirname
         self.logger.info('Creating working directory: %s', dirname)
@@ -597,6 +601,7 @@ class Stager(BaseProcessor):
             self.init_new_repo()
             return
         # otherwise we just need to clone it
+        koji.ensuredir(self.options.config['gitdir'])
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
         self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
 
@@ -669,31 +674,38 @@ If you find this file in a distro specific branch, it means that no content has 
             # should be new repo case
             src = os.path.join(self.workdir, "repo_init.git")
         dst = os.path.join(self.workdir, "checkout")
-        self.checkout = dst
-        self.logger.info('Setting up working checkout: %s', dst)
         cmd = ['git', 'clone', '--local', '-v', src, dst]
         self.log_cmd(cmd, cwd=self.workdir)
-
-        #create and checkout our staging branch
-        branchname = "altsrc-stage-%s" % self.options.branch
-        branchname = self.sanitize_ref_segment(branchname)
-        self.branchname = branchname
-        base = 'refs/remotes/origin/%s' % self.options.branch
-        self.logger.info('Setting up staging branch: %s', branchname)
-        cmd = ['git', 'show-ref', '--verify', base]
-        rv = self.log_cmd(cmd, cwd=dst, fatal=False)
-        if rv:
-            self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
-            cmd = ['git', 'checkout', '--orphan', branchname]
-            self.log_cmd(cmd, cwd=dst)
-            cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
-            self.log_cmd(cmd, cwd=dst)
-        else:
-            cmd = ['git', 'checkout', '-b', branchname, base]
-            self.log_cmd(cmd, cwd=dst)
+        self.do_checkout(new_branch=True)
 
         self.set_state("CHECKOUT")
 
+    def do_checkout(self, new_branch=False):
+        #create and checkout our staging branch
+        dst = os.path.join(self.workdir, "checkout")
+        self.checkout = dst
+        self.logger.info('Setting up working checkout: %s', dst)
+        branchname = "altsrc-stage-%s" % self.options.branch
+        branchname = self.sanitize_ref_segment(branchname)
+        self.branchname = branchname
+        if new_branch:
+            base = 'refs/remotes/origin/%s' % self.options.branch
+            self.logger.info('Setting up staging branch: %s', branchname)
+            cmd = ['git', 'show-ref', '--verify', base]
+            rv = self.log_cmd(cmd, cwd=dst, fatal=False)
+            if rv:
+                self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
+                cmd = ['git', 'checkout', '--orphan', branchname]
+                self.log_cmd(cmd, cwd=dst)
+                cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
+                self.log_cmd(cmd, cwd=dst)
+            else:
+                cmd = ['git', 'checkout', '-b', branchname, base]
+                self.log_cmd(cmd, cwd=dst)
+        # the branch could be existed, if the task failed at push_git in Pusher class
+        else:
+            cmd = ['git', 'checkout', branchname]
+            self.log_cmd(cmd, cwd=dst)
 
     # file extensions that are automatically placed in lookaside
     # (should all be lower case)
