@@ -4,14 +4,14 @@ import tempfile
 import os
 import logging
 from subprocess import Popen, PIPE, STDOUT, check_call
-from mock import patch
+from mock import patch, MagicMock, call
 
 from ConfigParser import RawConfigParser
 
 import pytest
 from hamcrest import assert_that, empty, equal_to, not_, calling
 
-from test_import.alt_src import main
+from test_import.alt_src import main, BaseProcessor
 from .matchers import exits
 
 TESTS_PATH = os.path.dirname(__file__)
@@ -385,3 +385,43 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
+
+
+def test_log_cmd_with_retries(capsys):
+
+    mock_options = MagicMock(brew=False)
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+    logger = logging.getLogger('altsrc')
+    handler = logging.StreamHandler()
+    handler.setLevel('DEBUG')
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+
+
+    with patch('time.sleep') as mocked_sleep:
+        with patch('subprocess.Popen.wait', side_effect=[1,1,1,0]) as mocked_wait:
+            assert_that(calling(processor.log_cmd).with_args(['echo', 'hello'], tries=4), exits(0))
+            assert len(mocked_wait.mock_calls) == 4
+            assert mocked_sleep.call_args_list == [call(30), call(60), call(90)]
+
+    out, err = capsys.readouterr()
+
+    # should fail three times and succeed in the forth time
+    expected = '[WARNING]  Command echo hello failed, will retry in 90s [tried: 3/4]'
+    assert expected in err
+
+@pytest.mark.parametrize('cmd, expected', [(['git', 'clone', 'some_git_url'], 4),
+                                           (['rsync', 'src', 'dst'], 4),
+                                           (['echo', 'foo'], 1)
+                                           ])
+def test_default_tries(cmd, expected):
+    """
+    test different number of tries for different commands.
+    If the command trys to communicate with remote server e.g. git clone,
+    then the retries is set to 4, else it's defaulted to 1
+    """
+    mock_options = MagicMock(brew=False)
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+    assert processor.default_tries(cmd) == expected

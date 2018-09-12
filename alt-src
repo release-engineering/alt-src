@@ -19,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
-
+import time
 
 
 '''
@@ -176,8 +176,23 @@ class BaseProcessor(object):
         #logfile.close()
         # looks like some versions of logger module are poorly behaved, so we don't explicitly close
 
-    def log_cmd(self, cmd, logfile=None, fatal=True, **kwargs):
+    def default_tries(self, cmd):
+        """Returns the default number of attempts for the given command"""
+        if cmd[0] == 'rsync' or \
+            (cmd[0] == 'git' and cmd[1] in ('fetch', 'push',
+                                            'clone', 'ls-remote')):
+            tries = 4
+            self.logger.debug('Setting number of attempts to 4')
+        else:
+            tries = 1
+        return tries
+
+    def log_cmd(self, cmd, logfile=None, fatal=True, tries=None, **kwargs):
         """Run command and log output if able"""
+        # check if the command is used to communicating with remote
+        if not tries:
+            tries = self.default_tries(cmd)
+
         self.logger.info('Running command: %s', ' '.join(cmd))
         if logfile:
             kwargs.setdefault('stdout', self.logfile)
@@ -188,8 +203,17 @@ class BaseProcessor(object):
             kwargs.setdefault('stdout', self.logfile)
             kwargs.setdefault('stderr', subprocess.STDOUT)
             kwargs.setdefault('close_fds', True)
-        proc = subprocess.Popen(cmd, **kwargs)
-        ret = proc.wait()
+
+        for i in range(1, tries+1):
+            proc = subprocess.Popen(cmd, **kwargs)
+            ret = proc.wait()
+            if not ret:
+                return ret
+            elif ret and i < tries:
+                sleep_time = i * 30
+                fmt = ' Command %s failed, will retry in %ss [tried: %s/%s]'
+                self.logger.warn(fmt, ' '.join(cmd), sleep_time, i, tries)
+                time.sleep(sleep_time)
         if ret:
             if fatal:
                 raise CommandError, "command failed: %r" % cmd
