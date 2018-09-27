@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import os
 import logging
-from subprocess import Popen, PIPE, STDOUT, check_call
+from subprocess import Popen, PIPE, STDOUT, check_call, check_output
 from mock import patch, MagicMock, call
 
 from ConfigParser import RawConfigParser
@@ -425,3 +425,50 @@ def test_default_tries(cmd, expected):
     with patch('os.path.isfile', return_value=True):
         processor = BaseProcessor(mock_options)
     assert processor.default_tries(cmd) == expected
+
+
+def test_push_when_already_pushed(config_file, lookasidedir, default_config, capsys):
+    """
+    test if the same content has already pushed to remote,
+    then the task should continue to push tags
+    """
+    rpm_1 = 'rcm-repoquery-1.4-1.foo.src.rpm'
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+        os.path.join(RPMS_PATH, rpm_1)
+    ]
+
+    # push content to remote
+    assert_that(calling(main).with_args(options), exits(0))
+    capsys.readouterr()
+    remove_handlers()
+
+    # push an rpm with same content but different tag
+    rpm_2 = 'rcm-repoquery-1.4-1.bar.src.rpm'
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+        os.path.join(RPMS_PATH, rpm_2)
+    ]
+    assert_that(calling(main).with_args(options), exits(0))
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+    expected = '[INFO] Same content already on remote, will push tag only'
+    assert [l for l in out_lines if expected in l]
+    # check if both tags are in the remote repo
+    git_url = default_config['git_push_url'] % {'package':'rcm-repoquery'}
+    cmd = ['git', 'tag']
+    out = check_output(cmd, cwd=git_url)
+    assert sorted(out.splitlines()) == ['imports/c7/rcm-repoquery-1.4-1.bar',
+                            'imports/c7/rcm-repoquery-1.4-1.foo']
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, 'rcm-repoquery', 'c7')
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))

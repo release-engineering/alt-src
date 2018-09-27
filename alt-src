@@ -168,13 +168,14 @@ class BaseProcessor(object):
         self.logger.addHandler(handler)
 
     def close_logfile(self):
-        self.logger.removeHandler(self.logfile_handler)
-        del self.logfile_handler
-        logfile = self.logfile
-        self.logfile = None
-        logfile.flush()
-        #logfile.close()
-        # looks like some versions of logger module are poorly behaved, so we don't explicitly close
+        if hasattr(self, 'logfile_handler'):
+            self.logger.removeHandler(self.logfile_handler)
+            del self.logfile_handler
+            logfile = self.logfile
+            self.logfile = None
+            logfile.flush()
+            #logfile.close()
+            # looks like some versions of logger module are poorly behaved, so we don't explicitly close
 
     def default_tries(self, cmd):
         """Returns the default number of attempts for the given command"""
@@ -541,7 +542,7 @@ class Stager(BaseProcessor):
         try:
             self.import_srpm()
         except UntaggedDuplicate:
-            self.set_state('PUSHED')
+            self.set_state('UNTAGGED')
             return
         try:
             self.debrand()
@@ -1493,32 +1494,40 @@ class Pusher(BaseProcessor):
         if self.duplicate_check() and not self.options.repush:
             self.logger.warning('Skipping push for duplicate content')
             return
-        if self.check_workdir() == 'PUSHED':
+        state = self.check_workdir()
+        if state == 'PUSHED':
             return
         self.setup_logfile('push.log')
-        self.add_changelog()
-        self.push_lookaside()
-        self.push_git()
+        if state == 'STAGED':
+            self.add_changelog()
+            self.push_lookaside()
+        self.push_git(state)
         self.set_state('PUSHED')
         self.notify()
         self.remove_error_logger()
         self.close_logfile()
 
-
     def check_workdir(self):
         self.workdir = dirname = self.get_workdir()
+        self.checkout = os.path.join(self.workdir, "checkout")
         self.logger.info('Checking working directory: %s', dirname)
         if os.path.islink(dirname):
             raise SanityError, "%s is a symlink" % dirname
         if not os.path.isdir(dirname):
             raise SanityError, "Not staged. No such directory: %s" % dirname
         state = self.get_state()
+        if state == 'UNTAGGED':
+            if self.options.config['push_tags']:
+                self.logger.info('Same content already on remote, will push tag only')
+                return state
+            else:
+                self.set_state('PUSHED')
+                state = 'PUSHED'
         if state == 'PUSHED':
             self.logger.warn('Already pushed')
             return state
         if state != 'STAGED':
             raise SanityError, "Staging incomplete"
-        self.checkout = os.path.join(self.workdir, "checkout")
         return state
 
     def add_changelog(self):
@@ -1575,63 +1584,64 @@ class Pusher(BaseProcessor):
         cmd.extend(['commit', '-m', 'add changelog entry'])
         self.log_cmd(cmd, cwd=self.checkout)
 
-    def push_git(self):
+    def push_git(self, state):
         """Get our checkout ready for the public push"""
 
-        # fetch from public remote
         git_url =  self.git_push_url()
         pushbranch = "altsrc-push-%s" % self.options.branch
         pushbranch = self.sanitize_ref_segment(pushbranch)
-        # see if remote has it
-        cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
-        output, rv = self.get_output(cmd, cwd=self.checkout, fatal=False)
-        if rv:
-            #error talking to remote. Could be that that repo does not exist, or could be a network error
-            self.init_remote_repo()
-        new_branch = False
-        if not output:
-            # XXX we should check the output more thoroughly
-            self.logger.warning("Branch missing on remote: %s", self.options.branch)
-            new_branch = True
-        else:
-            cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
+
+        # if state is UNTAGGED, then skip the following, just do push tag
+        if state == 'STAGED':
+            # fetch from public remote
+            # see if remote has it
+            cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
+            output, rv = self.get_output(cmd, cwd=self.checkout, fatal=False)
+            if rv:
+                #error talking to remote. Could be that that repo does not exist, or could be a network error
+                self.init_remote_repo()
+            new_branch = False
+            if not output:
+                # XXX we should check the output more thoroughly
+                self.logger.warning("Branch missing on remote: %s", self.options.branch)
+                new_branch = True
+            else:
+                cmd = ['git', 'fetch', '-v', git_url, "+%s:%s" % (self.options.branch, pushbranch)]
+                self.log_cmd(cmd, cwd=self.checkout)
+
+            # now apply changes on pushbranch to stage branch
+            our_import_tag = "altsrc-stage-import-%s" % self.options.branch
+            our_import_tag = self.sanitize_ref_segment(our_import_tag)
+            stage_branch = "altsrc-stage-%s" % self.options.branch
+            stage_branch = self.sanitize_ref_segment(stage_branch)
+            output, rv = self.get_output(['git', 'rev-parse', our_import_tag], cwd=self.checkout, fatal=True)
+            import_rev = output.strip()
+            output, rv = self.get_output(['git', 'rev-parse', stage_branch], cwd=self.checkout, fatal=True)
+            stage_rev = output.strip()
+            #TODO assert that stage_branch is a descendant of our_import_tag
+            if new_branch:
+                # branch from master if new
+                cmd = ['git', 'checkout', '-b', pushbranch, 'master']
+            else:
+                cmd = ['git', 'checkout', pushbranch]
             self.log_cmd(cmd, cwd=self.checkout)
 
-        # now apply changes on pushbranch to stage branch
-        our_import_tag = "altsrc-stage-import-%s" % self.options.branch
-        our_import_tag = self.sanitize_ref_segment(our_import_tag)
-        stage_branch = "altsrc-stage-%s" % self.options.branch
-        stage_branch = self.sanitize_ref_segment(stage_branch)
-        output, rv = self.get_output(['git', 'rev-parse', our_import_tag], cwd=self.checkout, fatal=True)
-        import_rev = output.strip()
-        output, rv = self.get_output(['git', 'rev-parse', stage_branch], cwd=self.checkout, fatal=True)
-        stage_rev = output.strip()
-        #TODO assert that stage_branch is a descendant of our_import_tag
-        if new_branch:
-            # branch from master if new
-            cmd = ['git', 'checkout', '-b', pushbranch, 'master']
-        else:
-            cmd = ['git', 'checkout', pushbranch]
-        self.log_cmd(cmd, cwd=self.checkout)
+            # set push branch to match import
+            cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
+            self.log_cmd(cmd, cwd=self.checkout)
+            cmd = ['git', 'checkout', our_import_tag, '--', '.']
+            self.log_cmd(cmd, cwd=self.checkout)
+            # check that we actually have something to commit
+            cmd = ['git', 'diff', '--cached', '--name-only']
+            output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
 
-        # set push branch to match import
-        cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
-        self.log_cmd(cmd, cwd=self.checkout)
-        cmd = ['git', 'checkout', our_import_tag, '--', '.']
-        self.log_cmd(cmd, cwd=self.checkout)
-        # check that we actually have something to commit
-        cmd = ['git', 'diff', '--cached', '--name-only']
-        output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
-        if not output:
-            raise SanityError, "Nothing to commit. Already pushed?"
-
-        #commit
-        cmd = self.git_base_cmd()
-        msg_data = koji.util.dslice(vars(self), ['nvr', 'package', 'version', 'release', 'summary'])
-        msg_data['branch'] = self.options.branch
-        commit_msg = self.options.config['commit_format'] % msg_data
-        cmd.extend(['commit', '-m', commit_msg])
-        self.log_cmd(cmd, cwd=self.checkout)
+            if output:
+                cmd = self.git_base_cmd()
+                msg_data = koji.util.dslice(vars(self), ['nvr', 'package', 'version', 'release', 'summary'])
+                msg_data['branch'] = self.options.branch
+                commit_msg = self.options.config['commit_format'] % msg_data
+                cmd.extend(['commit', '-m', commit_msg])
+                self.log_cmd(cmd, cwd=self.checkout)
 
         #tag
         if self.options.config['push_tags']:
@@ -1640,27 +1650,29 @@ class Pusher(BaseProcessor):
             cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
             self.log_cmd(cmd, cwd=self.checkout)
 
-        if stage_rev != import_rev:
-            # grab the rest of the stage branch (debranding)
-            cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
-            self.log_cmd(cmd, cwd=self.checkout)
-            cmd = ['git', 'checkout', stage_branch, '--', '.']
-            self.log_cmd(cmd, cwd=self.checkout)
-            # check that we actually have something to commit
-            cmd = ['git', 'diff', '--cached', '--name-only']
-            output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
-            if not output:
-                raise SanityError, "Debranding commits resulted in no changes?"
-            #commit
-            cmd = self.git_base_cmd()
-            cmd.extend(['commit', '-m', 'debrand %s' % self.nvr])
-            #XXX need a better commit message
-            self.log_cmd(cmd, cwd=self.checkout)
-            #TODO - another tag?
+        if state == 'STAGED':
+            if stage_rev != import_rev:
+                # grab the rest of the stage branch (debranding)
+                cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
+                self.log_cmd(cmd, cwd=self.checkout)
+                cmd = ['git', 'checkout', stage_branch, '--', '.']
+                self.log_cmd(cmd, cwd=self.checkout)
+                # check that we actually have something to commit
+                cmd = ['git', 'diff', '--cached', '--name-only']
+                output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
+                if not output:
+                    raise SanityError, "Debranding commits resulted in no changes?"
+                #commit
+                cmd = self.git_base_cmd()
+                cmd.extend(['commit', '-m', 'debrand %s' % self.nvr])
+                #XXX need a better commit message
+                self.log_cmd(cmd, cwd=self.checkout)
+                #TODO - another tag?
 
-        # ...and push
-        cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
-        self.log_cmd(cmd, cwd=self.checkout)
+            # ...and push
+            cmd = ['git', 'push', git_url, "%s:%s" % (pushbranch, self.options.branch)]
+            self.log_cmd(cmd, cwd=self.checkout)
+
         if self.options.config['push_tags']:
             cmd = ['git', 'push', git_url, "refs/tags/%s" % tagname]
             self.log_cmd(cmd, cwd=self.checkout)
