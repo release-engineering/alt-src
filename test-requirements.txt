@@ -1,3 +1,6 @@
-pytest>=3.0,<4
-PyHamcrest>=1.9,<2
 mock
+PyHamcrest
+
+# Locked for python 2.7 support
+pytest-cov==2.5.1
+pytest==3.2.5
