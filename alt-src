@@ -54,6 +54,8 @@ config_defaults = {
     'smtp_from' : 'Alt Source Stager <altsrc@redhat.com>',
     'smtp_to' : 'mike',
     'smtp_log_to' : '',
+    'wait_time': 3600,
+    'sleep_interval': 60,
 }
 
 config_int_opts = set([])
@@ -131,6 +133,7 @@ class BaseProcessor(object):
             raise StartupError, "No such file: %s" % self.srpm
         self.logfile = None
         self.workdir = None
+        self.lock = None
         self.nvr = "UNKNOWN"
         self.package = "UNKNOWN"
 
@@ -404,6 +407,18 @@ class BaseProcessor(object):
             fo.close()
         return state
 
+    def set_in_progress(self):
+        """
+        see if there's another task processing the current working directory by
+        attempting to acquire the lock of 'lock' file, if failed, then wait for
+        sleep_interval and re-try, the default longest waiting time is 60 mins.
+        """
+        lock_file_path = os.path.join(self.workdir, 'lock')
+        wait_time = int(self.options.config['wait_time'])
+        sleep_interval = int(self.options.config['sleep_interval'])
+        self.logger.info('Setting current workdir to in progress')
+        self.lock = acquire_lock(lock_file_path, wait_time, sleep_interval, self.logger)
+
     def sanitize_ref(self, ref):
         return '/'.join([self.sanitize_ref_segment(seg) for seg in ref.split('/')])
 
@@ -563,6 +578,7 @@ class Stager(BaseProcessor):
             raise SanityError, "%s is a symlink" % dirname
         elif os.path.isdir(dirname):
             # TODO - more sanity checks
+            self.set_in_progress()
             if self.options.restage:
                 self.logger.warn("Overwriting existing workdir: %s",  dirname)
                 # TODO - back up first
@@ -585,6 +601,7 @@ will overwrite." % (dirname, state))
             raise SanityError, "%s exists and is not a directory" % dirname
         self.logger.info('Creating working directory: %s', dirname)
         koji.ensuredir(dirname)
+        self.set_in_progress()
         return self.set_state("INIT")
 
     def sync_repo(self):
@@ -1714,6 +1731,25 @@ Working directory: %(workdir)s
         #TODO : be more informative
         self.send_email_notice('info', subject, body)
 
+
+def acquire_lock(lock_file_path, wait_time, sleep_interval, logger):
+    """
+    try to acquire the lock, if the unable to get it, wait for sleep_interval
+    secs, and retry. Until time out or get the locker.
+    """
+    times = int(wait_time/sleep_interval)
+    for _ in range(times):
+        try:
+            lock_file = open(lock_file_path, 'w+')
+            fcntl.lockf(lock_file.fileno(), fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except IOError:
+            logger.info('Another task is processing the current directory, waiting..')
+            time.sleep(sleep_interval)
+        else:
+            logger.info('Lock acquired')
+            return lock_file
+    logger.error('Failed to acquire lock within %ss', wait_time)
+    raise RuntimeError('Time out > %s' % wait_time)
 
 
 def explode_srpm(srpm, destdir=None, logfile=None):

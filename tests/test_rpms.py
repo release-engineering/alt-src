@@ -3,7 +3,9 @@ import shutil
 import tempfile
 import os
 import logging
+import fcntl
 from subprocess import Popen, PIPE, STDOUT, check_call, check_output
+from multiprocessing import Process
 from mock import patch, MagicMock, call
 
 from ConfigParser import RawConfigParser
@@ -11,7 +13,7 @@ from ConfigParser import RawConfigParser
 import pytest
 from hamcrest import assert_that, empty, equal_to, not_, calling
 
-from test_import.alt_src import main, BaseProcessor
+from .test_import.alt_src import main, BaseProcessor, acquire_lock
 from .matchers import exits
 
 TESTS_PATH = os.path.dirname(__file__)
@@ -75,6 +77,8 @@ def default_config(pushdir, lookasidedir, tempdir):
         'smtp_host': 'smtp.example.redhat.com',
         'smtp_to': 'no_such_person@redhat.com',
         'smtp_log_to': 'no_such_person@redhat.com',
+        'wait_time': 5,
+        'sleep_interval': 1,
     }
 
 
@@ -472,3 +476,63 @@ def test_push_when_already_pushed(config_file, lookasidedir, default_config, cap
     lookaside = '%s/%s/%s' % (lookasidedir, 'rcm-repoquery', 'c7')
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
+
+
+def test_acquire_release_lock(tempdir):
+    # test lock and relase file lock function works as expected
+    logger = logging.getLogger('altsrc')
+    logger.setLevel('DEBUG')
+    log_file = os.path.join(tempdir, 'altsrc-log')
+    handler = logging.FileHandler(log_file)
+    handler.setLevel('DEBUG')
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+
+    lock_file_path = os.path.join(tempdir, 'lock')
+    # acquire the lock first
+    locker = acquire_lock(lock_file_path, 1, 0.2, logger)
+    # invoke another process to acquire the lock again
+    proc = Process(target=acquire_lock, args=(lock_file_path, 1, 0.2, logger))
+    proc.start()
+    proc.join()
+
+    # should raise error.
+    expected_1 = '[INFO] Another task is processing the current directory, waiting..'
+    expected_2 = '[ERROR] Failed to acquire lock within 1s'
+    with open(log_file, 'r') as f:
+        logs = f.readlines()
+        assert [l for l in logs if expected_1 in l]
+        assert [l for l in logs if expected_2 in l]
+
+    # release the lock and invoke another process to acquire lock again
+    fcntl.lockf(locker, fcntl.LOCK_UN)
+    locker.close()
+    proc = Process(target=acquire_lock, args=(lock_file_path, 1, 0.2, logger))
+    proc.start()
+    proc.join()
+
+    # lock should be acquired successfully.
+    expected = '[INFO] Lock acquired'
+    with open(log_file, 'r') as f:
+        assert expected in f.readlines()[-1]
+    remove_handlers()
+
+
+def test_stage_only(config_file, pushdir, capsys):
+    """
+    test a task without push option
+    """
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+
+    options = ['-v',
+               '-c', config_file,
+               'c7',
+               os.path.join(RPMS_PATH, rpm)
+            ]
+
+    assert_that(calling(main).with_args(options), exits(0))
+    _, err = capsys.readouterr()
+
+    assert_that(len(err), equal_to(0))
+    files = os.listdir(pushdir)
+    assert_that(files, empty())
