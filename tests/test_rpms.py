@@ -11,7 +11,7 @@ from mock import patch, MagicMock, call
 from ConfigParser import RawConfigParser
 
 import pytest
-from hamcrest import assert_that, empty, equal_to, not_, calling
+from hamcrest import assert_that, empty, equal_to, not_, calling, raises
 
 from .test_import.alt_src import main, BaseProcessor, acquire_lock
 from .matchers import exits
@@ -348,6 +348,60 @@ will overwrite." % default_config['stagedir']
     lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
+
+
+def test_repush_with_state_none(config_file, lookasidedir, capsys):
+    """
+    set_state fails, state file is not created, so get_state fails to open
+    it and state ends with None.
+    Repush succeeds.
+    """
+
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    # call once, fail the task at state file creation, the state ends with None
+    with patch("tests.test_import.alt_src.BaseProcessor.set_state",
+               autospec=True, side_effect=RuntimeError):
+        assert_that(calling(main).with_args(options), exits(2))
+    # remove handlers
+    remove_handlers()
+
+    # clear out/err
+    capsys.readouterr()
+
+    # call main again to push
+    assert_that(calling(main).with_args(options), exits(0))
+
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+
+    assert_that(len(err), equal_to(0))
+    expected = '(state=None), will overwrite.'
+    assert [l for l in out_lines if expected in l]
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))
+
+
+def test_get_state_with_error_other_than_enoent(tempdir):
+    options = MagicMock(brew=None, source=tempfile.mkstemp(dir=tempdir)[1])
+    processor = BaseProcessor(options)
+    processor.workdir = tempfile.mkstemp(dir=tempdir)[1]
+
+    # attempting to open state file raises generic IOError
+    with patch('__builtin__.open', autospec=True, side_effect=IOError):
+        # error is raised by method because only ENOENT is handled
+        assert_that(calling(processor.get_state), raises(IOError))
 
 
 def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_config, capsys):

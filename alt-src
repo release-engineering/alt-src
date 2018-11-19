@@ -20,6 +20,7 @@ import sys
 import tempfile
 import traceback
 import time
+import errno
 
 
 '''
@@ -384,8 +385,14 @@ class BaseProcessor(object):
         if not self.workdir:
             return None
         statefile = os.path.join(self.workdir, 'state')
+        try:
+            fo = open(statefile, 'r')
+        except IOError as err:
+            if err.errno == errno.ENOENT:
+                self.logger.debug('No state file at %s', statefile)
+                return None
+            raise
         self.logger.debug('Reading state file: %s', statefile)
-        fo = open(statefile, 'r')
         try:
             fcntl.lockf(fo.fileno(), fcntl.LOCK_SH)
             state = fo.read()
