@@ -1,5 +1,6 @@
 mock
 PyHamcrest
+koji
 
 # Locked for python 2.7 support
 pytest-cov==2.5.1
