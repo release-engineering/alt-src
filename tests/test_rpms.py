@@ -1,20 +1,24 @@
 import re
+import sys
 import shutil
 import tempfile
 import os
 import logging
 import fcntl
-from subprocess import Popen, PIPE, STDOUT, check_call, check_output
+import pytest
+from subprocess import Popen, PIPE, check_call, check_output
 from multiprocessing import Process
 from mock import patch, MagicMock, call
-
-from ConfigParser import RawConfigParser
-
-import pytest
+from configparser import RawConfigParser
 from hamcrest import assert_that, empty, equal_to, not_, calling, raises
 
-from .test_import.alt_src import main, BaseProcessor, acquire_lock
 from .matchers import exits
+
+# ensure python2 before attempting to import sources
+if sys.version_info < (3, 0):
+    from .test_import.alt_src import main, BaseProcessor, acquire_lock
+
+xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
 
 TESTS_PATH = os.path.dirname(__file__)
 RPMS_PATH = os.path.join(TESTS_PATH, 'data', 'rpms')
@@ -87,7 +91,7 @@ def config_file(tempdir, default_config):
     """Yields path to a configuration file suitable for testing."""
     cfg = RawConfigParser()
     cfg.add_section('altsrc')
-    for key, value in default_config.iteritems():
+    for key, value in default_config.items():
         cfg.set('altsrc', key, value)
 
     filename = '%s/altsrc-test.cfg' % tempdir
@@ -109,10 +113,13 @@ def git_subject(git_dir, ref):
 
     return out.strip()
 
+
 def remove_handlers():
     logger = logging.getLogger('altsrc')
     logger.handlers = []
 
+
+@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
@@ -152,6 +159,8 @@ def test_push_with_debrand(config_file, pushdir, lookasidedir,
     assert_that(files, not_(empty()))
     remove_handlers()
 
+
+@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
@@ -198,13 +207,13 @@ def test_repush_with_staged_data(config_file, pushdir, lookasidedir,
     w_expect = '[WARNING] Skipping push for duplicate content'
     assert [l for l in out_lines if w_expect in l]
 
-
     # lookaside dir should have content
     lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
 
 
+@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
@@ -267,6 +276,7 @@ def test_repush_without_staged_data(config_file, pushdir, lookasidedir,
     assert_that(files, not_(empty()))
 
 
+@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'fake', '1.1', '22'),
     # need no-debrand packages for this test
@@ -313,6 +323,7 @@ def test_repush_without_tag(config_file, pushdir, lookasidedir, branch,
     assert dupwarn
 
 
+@xfail(strict=True)
 def test_repush_with_state_init(config_file, pushdir, lookasidedir, default_config, capsys):
 
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
@@ -350,6 +361,7 @@ will overwrite." % default_config['stagedir']
     assert_that(files, not_(empty()))
 
 
+@xfail(strict=True)
 def test_repush_with_state_none(config_file, lookasidedir, capsys):
     """
     set_state fails, state file is not created, so get_state fails to open
@@ -393,6 +405,7 @@ def test_repush_with_state_none(config_file, lookasidedir, capsys):
     assert_that(files, not_(empty()))
 
 
+@xfail(strict=True)
 def test_get_state_with_error_other_than_enoent(tempdir):
     options = MagicMock(brew=None, source=tempfile.mkstemp(dir=tempdir)[1])
     processor = BaseProcessor(options)
@@ -404,6 +417,7 @@ def test_get_state_with_error_other_than_enoent(tempdir):
         assert_that(calling(processor.get_state), raises(IOError))
 
 
+@xfail(strict=True)
 def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_config, capsys):
 
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
@@ -445,6 +459,7 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     assert_that(files, not_(empty()))
 
 
+@xfail(strict=True)
 def test_log_cmd_with_retries(capsys):
 
     mock_options = MagicMock(brew=False)
@@ -455,7 +470,6 @@ def test_log_cmd_with_retries(capsys):
     handler.setLevel('DEBUG')
     handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
     logger.addHandler(handler)
-
 
     with patch('time.sleep') as mocked_sleep:
         with patch('subprocess.Popen.wait', side_effect=[1,1,1,0]) as mocked_wait:
@@ -469,6 +483,8 @@ def test_log_cmd_with_retries(capsys):
     expected = '[WARNING]  Command echo hello failed, will retry in 90s [tried: 3/4]'
     assert expected in err
 
+
+@xfail(strict=True)
 @pytest.mark.parametrize('cmd, expected', [(['git', 'clone', 'some_git_url'], 4),
                                            (['rsync', 'src', 'dst'], 4),
                                            (['echo', 'foo'], 1)
@@ -485,6 +501,7 @@ def test_default_tries(cmd, expected):
     assert processor.default_tries(cmd) == expected
 
 
+@xfail(strict=True)
 def test_push_when_already_pushed(config_file, lookasidedir, default_config, capsys):
     """
     test if the same content has already pushed to remote,
@@ -532,6 +549,7 @@ def test_push_when_already_pushed(config_file, lookasidedir, default_config, cap
     assert_that(files, not_(empty()))
 
 
+@xfail(strict=True)
 def test_acquire_release_lock(tempdir):
     # test lock and relase file lock function works as expected
     logger = logging.getLogger('altsrc')
@@ -572,6 +590,7 @@ def test_acquire_release_lock(tempdir):
     remove_handlers()
 
 
+@xfail(strict=True)
 def test_stage_only(config_file, pushdir, capsys):
     """
     test a task without push option
