@@ -6,12 +6,15 @@ import os
 import logging
 import fcntl
 import pytest
+import yaml
 from subprocess import Popen, PIPE, check_call, check_output
 from multiprocessing import Process
 from mock import patch, MagicMock, call
-from configparser import RawConfigParser
+from ConfigParser import RawConfigParser
 from hamcrest import assert_that, empty, equal_to, not_, calling, raises
 
+from .test_import.alt_src import \
+    main, BaseProcessor, acquire_lock, StartupError, SanityError, InputError, config_defaults
 from .matchers import exits
 
 # ensure python2 before attempting to import sources
@@ -23,6 +26,7 @@ xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with 
 TESTS_PATH = os.path.dirname(__file__)
 RPMS_PATH = os.path.join(TESTS_PATH, 'data', 'rpms')
 RULES_PATH = os.path.join(TESTS_PATH, 'data', 'rules')
+MODULES_PATH = os.path.join(TESTS_PATH, 'data', 'module_source')
 
 DEBRAND_XFAIL = [
     # list any RPMs where debrand is expected to fail here
@@ -74,6 +78,7 @@ def default_config(pushdir, lookasidedir, tempdir):
         'log_level': 'DEBUG',
         'rulesdir': rulesdir(),
         'git_push_url': os.path.join(pushdir, '%(package)s.git'),
+        'git_push_url_module': os.path.join(pushdir, '%(package)s.git'),
         'init_rsync_dest': os.path.join(pushdir, '%(package)s.git'),
         'lookaside_rsync_dest': lookasidedir,
         # no blacklist
@@ -103,6 +108,18 @@ def config_file(tempdir, default_config):
     os.unlink(filename)
 
 
+@pytest.fixture
+def mock_koji_session():
+    with patch('koji.ClientSession') as mock_koji_session:
+        yield mock_koji_session
+
+
+@pytest.fixture
+def mock_koji_pathinfo():
+    with patch('koji.PathInfo') as mock_koji_pathinfo:
+        yield mock_koji_pathinfo
+
+
 def git_subject(git_dir, ref):
     """Return subject of a git ref within the given path."""
     cmd = ['git', 'show', '-s', '--format=%s', ref]
@@ -117,6 +134,25 @@ def git_subject(git_dir, ref):
 def remove_handlers():
     logger = logging.getLogger('altsrc')
     logger.handlers = []
+
+
+def get_test_mmd_str_and_dict():
+    name = "my_package"
+    stream = "42"
+    version = 1
+    context = "c_1"
+    summary = "foo_summary"
+    mmd_dict = {'data':
+                    {'name': name,
+                     'stream': stream,
+                     'version': version,
+                     'context': context,
+                     'summary': summary
+                    }
+               }
+    mmd_str = yaml.dump(mmd_dict)
+
+    return mmd_str, mmd_dict['data']
 
 
 @xfail(strict=True)
@@ -139,8 +175,7 @@ def test_push_with_debrand(config_file, pushdir, lookasidedir,
     ]
 
     assert_that(calling(main).with_args(options), exits(0))
-    out, err = capsys.readouterr()
-
+    _, err = capsys.readouterr()
     try:
         assert_that(len(err), equal_to(0))
         subject = git_subject('%s/%s.git' % (pushdir, name), branch)
@@ -609,3 +644,156 @@ def test_stage_only(config_file, pushdir, capsys):
     assert_that(len(err), equal_to(0))
     files = os.listdir(pushdir)
     assert_that(files, empty())
+
+
+def test_not_existing_source_file(config_file):
+    rpm = 'foo.src.rpm'
+
+    options = ['-v',
+               '-c', config_file,
+               'c7',
+               os.path.join(RPMS_PATH, rpm)
+              ]
+
+    assert_that(calling(main).with_args(options), raises(StartupError))
+    remove_handlers()
+
+
+def test_srpm_brew(mock_koji_session, mock_koji_pathinfo):
+    mock_koji_session.return_value.getRPM.return_value = {'arch': 'src', 'build_id': 42}
+    mock_koji_pathinfo.return_value.build.return_value = "test_build"
+    mock_koji_pathinfo.return_value.rpm.return_value = "test_relpath"
+
+    mock_options = MagicMock(brew=True, source="build_nvr.src.rpm")
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+        assert_that(processor.source_file, equal_to("test_build/test_relpath"))
+
+
+@pytest.mark.parametrize('getRPM_return_value',
+                         [{'arch': 'foo'}, None],
+                         ids=("wrong_arch", "source_not_found"))
+def test_srpm_brew_sanity_error(getRPM_return_value, mock_koji_session, mock_koji_pathinfo):
+    mock_koji_session.return_value.getRPM.return_value = getRPM_return_value
+    mock_koji_pathinfo.return_value.build.return_value = "test_build"
+    mock_koji_pathinfo.return_value.rpm.return_value = "test_relpath"
+
+    mock_options = MagicMock(brew=True, source="build_nvr.src.rpm")
+    assert_that(calling(BaseProcessor).with_args(mock_options), raises(SanityError))
+
+
+@xfail(strict=True)
+def test_module_src_brew(mock_koji_session, mock_koji_pathinfo):
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': "foo_module_str"}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_koji_pathinfo.return_value.typedir.return_value = "test_build/files/module/"
+
+    mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt")
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+        assert_that(processor.source_file, equal_to("test_build/files/module/modulemd.src.txt"))
+        assert_that(processor.mmd, equal_to("foo_module_str"))
+
+
+@xfail(strict=True)
+def test_module_src_brew_build_not_found(mock_koji_session, mock_koji_pathinfo):
+    mock_koji_session.return_value.getBuild.return_value = None
+    mock_koji_pathinfo.return_value.build.return_value = "test_build"
+
+    mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt")
+    assert_that(calling(BaseProcessor).with_args(mock_options), raises(SanityError))
+
+
+@xfail(strict=True)
+def test_read_srpm_input_error(mock_koji_session, mock_koji_pathinfo):
+    mock_koji_session.return_value.getRPM.return_value = {'arch': 'src', 'build_id': 42}
+    mock_koji_pathinfo.return_value.build.return_value = "test_build"
+    mock_koji_pathinfo.return_value.rpm.return_value = "test_relpath"
+
+    with patch('koji.get_rpm_header'):
+        mock_options = MagicMock(brew=True, source="build_nvr.src.rpm")
+        with patch('os.path.isfile', return_value=True):
+            processor = BaseProcessor(mock_options)
+            assert_that(calling(processor.read_srpm), raises(InputError))
+
+
+@xfail(strict=True)
+def test_read_mmd_str(mock_koji_session, mock_koji_pathinfo):
+    mmd_str, mmd_dict = get_test_mmd_str_and_dict()
+
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt")
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+        processor.read_source_file()
+
+    assert_that(processor.package, equal_to(mmd_dict['name']))
+    assert_that(processor.version, equal_to(mmd_dict['stream']))
+    assert_that(processor.release, equal_to(str(mmd_dict['version']) + '.' + mmd_dict['context']))
+    assert_that(processor.summary, equal_to(mmd_dict['summary']))
+
+
+@xfail(strict=True)
+def test_git_url_module(mock_koji_session, mock_koji_pathinfo):
+    mmd_str, mmd_dict = get_test_mmd_str_and_dict()
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+
+    mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt", config=config_defaults)
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+        processor.read_source_file()
+
+        git_push_url = processor.git_push_url()
+        git_fetch_url = processor.git_fetch_url()
+        assert_that(git_push_url,
+                    equal_to(processor.options.config['git_push_url_module']
+                             % {'package': mmd_dict['name']}))
+
+        assert_that(git_fetch_url,
+                    equal_to(processor.options.config['git_push_url_module']
+                             % {'package': mmd_dict['name']}))
+
+
+@xfail(strict=True)
+def test_unsupported_source_startup_error():
+    mock_options = MagicMock(brew=True, source="build_nvr.src.foo")
+    assert_that(calling(BaseProcessor).with_args(mock_options), raises(StartupError))
+
+
+@xfail(strict=True)
+def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_config,
+                          mock_koji_session, mock_koji_pathinfo):
+    """Verify that alt-src command completes without any errors and generates
+    a commit for the given module source."""
+    branch = 'c7'
+    modulemd = 'fake-nvr:modulemd.src.txt'
+
+    options = ['-v',
+               '-c', config_file,
+               '--brew',
+               branch,
+               modulemd
+              ]
+
+    mmd_str, mmd_dict = get_test_mmd_str_and_dict()
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
+
+    staged_module_source_path = os.path.join(default_config['stagedir'],
+                                             branch,
+                                             mmd_dict['name'][0],
+                                             mmd_dict['name'],
+                                             'fake-nvr',
+                                             'checkout',
+                                             'SOURCES',
+                                             'modulemd.src.txt')
+
+    assert_that(calling(main).with_args(options), exits(0))
+    _, err = capsys.readouterr()
+
+    assert_that(len(err), equal_to(0))
+    assert_that(os.path.isfile(staged_module_source_path))
+    remove_handlers()

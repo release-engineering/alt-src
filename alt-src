@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import traceback
+import yaml
 from optparse import OptionParser
 
 import koji
@@ -33,7 +34,9 @@ config_defaults = {
     'debrand': True,
     'lookaside': '/srv/cache/lookaside',
     'git_push_url': '/srv/git/pushtest/%(package)s.git',
+    'git_push_url_module': '/srv/git/pushtest-modules/%(package)s.git',
     'git_fetch_url': None,  # None means same as push
+    'git_fetch_url_module': None,  # None means same as push
     'push_tags': True,
     'lookaside_rsync_dest': '/srv/cache/lookaside2',
     'init_rsync_dest': '/srv/git/pushtest/%(package)s.git',
@@ -101,6 +104,10 @@ class StageError(Exception):
     pass
 
 
+class InputError(StageError):
+    pass
+
+
 class StartupError(StageError):
     """Raised when an error happens very early"""
     pass
@@ -132,17 +139,36 @@ class BaseProcessor(object):
         self.options = options
         self.logger = logging.getLogger("altsrc")
         self.error_log = None
-        if options.brew:
-            self.srpm = self.get_koji_srpm(options.source)
-        else:
-            self.srpm = options.source
-        if not os.path.isfile(self.srpm):
-            raise StartupError, "No such file: %s" % self.srpm
+
+        self.mmd = None
+
         self.logfile = None
         self.workdir = None
         self.lock = None
         self.nvr = "UNKNOWN"
         self.package = "UNKNOWN"
+
+        self.headers = None
+        self.release = None
+        self.version = None
+        self.summary = None
+
+        if self.options.brew:
+            if self.options.source.endswith('modulemd.src.txt'):
+                # expected source arg: <nvr>:module.src.txt
+                self.nvr = self.options.source.rsplit(':', 1)[0]
+                self.source_file, self.mmd = self.get_koji_module_src()
+
+            elif self.options.source.endswith('src.rpm'):
+                self.source_file = self.get_koji_srpm()
+            else:
+                raise StartupError("Unsupported source: %s" % self.options.source)
+
+        else:
+            self.source_file = self.options.source
+
+        if not os.path.isfile(self.source_file):
+            raise StartupError, "No such file: %s" % self.source_file
 
     def run(self):
         raise NotImplementedError
@@ -241,26 +267,59 @@ class BaseProcessor(object):
                 raise CommandError, "command failed: %r" % cmd
         return output, rv
 
-    def get_koji_srpm(self, source):
-        """Assume source is an n-v-r.a from koji and get the file from there"""
-        session = koji.ClientSession(self.options.config['koji_hub'], {'anon_retry':True})
+    def _get_koji_session_and_pathinfo(self):
+        session = koji.ClientSession(self.options.config['koji_hub'], {'anon_retry': True})
         pathinfo = koji.PathInfo(self.options.config['koji_topdir'])
-        rpminfo = session.getRPM(source)
+        return session, pathinfo
+
+    def get_koji_srpm(self):
+        """Assume source is an n-v-r.a from koji and get the file from there"""
+        session, pathinfo = self._get_koji_session_and_pathinfo()
+        rpminfo = session.getRPM(self.options.source)
         if not rpminfo:
-            raise SanityError, "No such rpm: %s" % source
+            raise SanityError, "No such rpm: %s" % self.options.source
         if rpminfo['arch'] != 'src':
-            raise SanityError, "Not a source rpm: %s" % source
+            raise SanityError, "Not a source rpm: %s" % self.options.source
         binfo = session.getBuild(rpminfo['build_id'])
         bdir = pathinfo.build(binfo)
         relpath = pathinfo.rpm(rpminfo)
         return os.path.join(bdir, relpath)
 
+    def get_koji_module_src(self):
+        session, pathinfo = self._get_koji_session_and_pathinfo()
+        binfo = session.getBuild(self.nvr)
+
+        if binfo is None:
+            raise SanityError("No such build %s:" % self.nvr)
+
+        mmd = binfo['extra']['typeinfo']['module']['modulemd_str']
+        return os.path.join(pathinfo.typedir(binfo, 'module'), 'modulemd.src.txt'), mmd
+
+    def read_source_file(self):
+        if self.mmd:
+            self.read_mmd()
+        else:
+            self.read_srpm()
+
+    def read_mmd(self):
+        mmd_parsed = yaml.load(self.mmd)
+        module_data = mmd_parsed['data']
+
+        name = module_data['name']
+        version = module_data['stream']
+        release = '.'.join((str(module_data['version']), module_data['context']))
+
+        self.package = name
+        self.version = version
+        self.release = release
+        self.summary = module_data['summary']
+
     def read_srpm(self):
-        self.logger.info('Reading source rpm: %s', self.srpm)
-        h = koji.get_rpm_header(self.srpm)
+        self.logger.info('Reading source rpm: %s', self.source_file)
+        h = koji.get_rpm_header(self.source_file)
         self.headers = h
         if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
-            raise InputError, "%s is not a source package" % self.srpm
+            raise InputError, "%s is not a source package" % self.source_file
         data = koji.get_header_fields(h, ['name','version','release','summary'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
@@ -303,14 +362,22 @@ class BaseProcessor(object):
 
     def git_push_url(self):
         params = {'package': self.package }
-        git_url =  self.options.config['git_push_url'] % params
+        if self.mmd:
+            git_url = self.options.config['git_push_url_module'] % params
+        else:
+            git_url = self.options.config['git_push_url'] % params
         return git_url
 
     def git_fetch_url(self):
-        url_form = (self.options.config['git_fetch_url']
-                    or self.options.config['git_push_url'])
-        params = {'package': self.package }
-        git_url =  url_form % params
+        if self.mmd:
+            url_form = (self.options.config['git_fetch_url_module']
+                        or self.options.config['git_push_url_module'])
+        else:
+            url_form = (self.options.config['git_fetch_url']
+                        or self.options.config['git_push_url'])
+
+        params = {'package': self.package}
+        git_url = url_form % params
         return git_url
 
     def git_base_cmd(self):
@@ -541,7 +608,7 @@ class Stager(BaseProcessor):
 
     def run(self):
         self.add_error_logger()
-        self.read_srpm()
+        self.read_source_file()
         self.check_package()
         if self.duplicate_check() and not self.options.repush:
             self.logger.warning('Skipping staging for duplicate content')
@@ -552,7 +619,7 @@ class Stager(BaseProcessor):
         self.sync_repo()
         self.setup_checkout()
         try:
-            self.import_srpm()
+            self.import_sources()
         except UntaggedDuplicate:
             self.set_state('UNTAGGED')
             return
@@ -786,9 +853,8 @@ If you find this file in a distro specific branch, it means that no content has 
         self.logger.debug("Source file %s: %s", path, output)
         return output.find('text') == -1
 
-    def import_srpm(self):
-        """Import our srpm on the specified branch"""
-
+    def import_sources(self):
+        """Import our source srpm/modulemd on the specified branch"""
         # clear our checkout dir
         dst = self.checkout
         wipe_git_dir(dst)
@@ -798,14 +864,18 @@ If you find this file in a distro specific branch, it means that no content has 
         for fn in os.listdir(dst):
             if fn != '.git':
                 raise SanityError('Failed to clear checkout')
-
-        #explode our srpm
-        self.logfile.flush()
-        explode_srpm(self.srpm, dst, logfile=self.logfile)
+        sourcedir = os.path.join(dst, 'SOURCES/')
+        if self.mmd:
+            # move module src to stage dir
+            os.makedirs(sourcedir)
+            shutil.copy(self.source_file, os.path.join(sourcedir))
+        else:
+            # explode our srpm
+            self.logfile.flush()
+            explode_srpm(self.source_file, dst, logfile=self.logfile)
 
         #figure out which sources go to the lookaside
         to_move = []
-        sourcedir = os.path.join(dst, 'SOURCES')
         for fn in os.listdir(sourcedir):
             path = os.path.join(sourcedir, fn)
             if self.for_lookaside(path):
@@ -1499,7 +1569,7 @@ class Pusher(BaseProcessor):
 
     def run(self):
         self.add_error_logger()
-        self.read_srpm()
+        self.read_source_file()
         self.check_package()
         if self.duplicate_check() and not self.options.repush:
             self.logger.warning('Skipping push for duplicate content')
@@ -1830,7 +1900,9 @@ def _(args):
 def main(args):
     """process options from command line"""
 
-    usage = _("%prog [options] branch srpm")
+    usage = _("%prog [options] branch source\n"
+              "source can be <nvr>.src.rpm or <nvr>:modulemd.src.txt only when used with --brew,\n"
+              "without --brew srpm as source is supported only, <nvr>[.src.rpm] is accepted then.")
     parser = OptionParser(usage=usage)
     parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
                       help=_("use alternate configuration file"), metavar="FILE")
