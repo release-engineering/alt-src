@@ -3,64 +3,64 @@
 import ConfigParser
 import cStringIO
 import datetime
+import errno
 import fcntl
 import fnmatch
 import hashlib
 import logging
-import koji
-from optparse import OptionParser
 import os
 import os.path
 import re
-import rpm
 import shutil
 import smtplib
 import subprocess
 import sys
-import tempfile
-import traceback
 import time
-import errno
+import traceback
+from optparse import OptionParser
 
+import koji
+import rpm
 
 '''
 Given an srpm and product, stage for alt-src release
 '''
 
 config_defaults = {
-    'stagedir' : '/srv/cache/stage',
-    'gitdir' : '/srv/git',
-    'rulesdir' : '/var/lib/altsrc/rules',
-    'debrand' : True,
-    'lookaside' : '/srv/cache/lookaside',
-    'git_push_url' : '/srv/git/pushtest/%(package)s.git',
-    'git_fetch_url' : None,  # None means same as push
-    'push_tags' : True,
-    'lookaside_rsync_dest' : '/srv/cache/lookaside2',
-    'init_rsync_dest' : '/srv/git/pushtest/%(package)s.git',
-    'log_level' : 'INFO',
-    'log_file' : None,
-    'log_format' : '%(asctime)s [%(levelname)s] %(message)s',
-    'whitelist' : '',
-    'blacklist' : '',
-    'commit_format' : 'import %(nvr)s',
-    'changelog_user' : 'CentOS Sources <bugs@centos.org>',
-    'git_name' : 'CentOS Sources',
-    'git_email' : 'bugs@centos.org',
-    'koji_hub' : 'https://brewhub.engineering.redhat.com/brewhub',
-    'koji_topdir' : '/mnt/redhat/brewroot',
-    'smtp_enabled' : True,
-    'smtp_host' : 'localhost',
-    #'smtp_host' : 'smtp.corp.redhat.com',
-    'smtp_from' : 'Alt Source Stager <altsrc@redhat.com>',
-    'smtp_to' : 'mike',
-    'smtp_log_to' : '',
+    'stagedir': '/srv/cache/stage',
+    'gitdir': '/srv/git',
+    'rulesdir': '/var/lib/altsrc/rules',
+    'debrand': True,
+    'lookaside': '/srv/cache/lookaside',
+    'git_push_url': '/srv/git/pushtest/%(package)s.git',
+    'git_fetch_url': None,  # None means same as push
+    'push_tags': True,
+    'lookaside_rsync_dest': '/srv/cache/lookaside2',
+    'init_rsync_dest': '/srv/git/pushtest/%(package)s.git',
+    'log_level': 'INFO',
+    'log_file': None,
+    'log_format': '%(asctime)s [%(levelname)s] %(message)s',
+    'whitelist': '',
+    'blacklist': '',
+    'commit_format': 'import %(nvr)s',
+    'changelog_user': 'CentOS Sources <bugs@centos.org>',
+    'git_name': 'CentOS Sources',
+    'git_email': 'bugs@centos.org',
+    'koji_hub': 'https://brewhub.engineering.redhat.com/brewhub',
+    'koji_topdir': '/mnt/redhat/brewroot',
+    'smtp_enabled': True,
+    'smtp_host': 'localhost',
+    # 'smtp_host' : 'smtp.corp.redhat.com',
+    'smtp_from': 'Alt Source Stager <altsrc@redhat.com>',
+    'smtp_to': 'mike',
+    'smtp_log_to': '',
     'wait_time': 3600,
     'sleep_interval': 60,
 }
 
 config_int_opts = set([])
 config_bool_opts = set(['smtp_enabled', 'push_tags', 'debrand'])
+
 
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
@@ -100,21 +100,27 @@ class StageError(Exception):
     """Our base error class"""
     pass
 
+
 class StartupError(StageError):
     """Raised when an error happens very early"""
     pass
 
+
 class CommandError(StageError):
     """Raised when a command we run fails"""
+
 
 class FilterError(StageError):
     pass
 
+
 class SanityError(StageError):
     pass
 
+
 class ConfigError(StageError):
     pass
+
 
 class UntaggedDuplicate(Exception):
     """We use this to signal late duplicate detection"""
@@ -147,11 +153,7 @@ class BaseProcessor(object):
         handler = logging.StreamHandler(self.error_log)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(logging.ERROR)
-        self.error_handler = handler
         self.logger.addHandler(handler)
-
-    def remove_error_logger(self):
-        self.logger.removeHandler(self.error_handler)
 
     def setup_logfile(self, logname):
         if not os.path.isdir(self.workdir):
@@ -168,18 +170,7 @@ class BaseProcessor(object):
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(self.options.file_log_level)
-        self.logfile_handler = handler
         self.logger.addHandler(handler)
-
-    def close_logfile(self):
-        if hasattr(self, 'logfile_handler'):
-            self.logger.removeHandler(self.logfile_handler)
-            del self.logfile_handler
-            logfile = self.logfile
-            self.logfile = None
-            logfile.flush()
-            #logfile.close()
-            # looks like some versions of logger module are poorly behaved, so we don't explicitly close
 
     def default_tries(self, cmd):
         """Returns the default number of attempts for the given command"""
@@ -361,7 +352,6 @@ class BaseProcessor(object):
 
         raise SanityError, 'No spec file in checkout: %s' % self.checkout
 
-
     def duplicate_check(self):
         """Check to see if we're already on remote"""
         # XXX Currently mostly useless if push_tags is disabled
@@ -429,11 +419,11 @@ class BaseProcessor(object):
     def sanitize_ref(self, ref):
         return '/'.join([self.sanitize_ref_segment(seg) for seg in ref.split('/')])
 
-    git_sanitize_re = ( r'((?:^[.]'
-                        r'|[.]$'
-                        r'|[[:cntrl:]]'
-                        r'|[ %~^:?*/\\[])+)' )
-                        # % is ok in refs, but we use it to escape the rest
+    # % is ok in refs, but we use it to escape the rest
+    git_sanitize_re = (r'((?:^[.]'
+                       r'|[.]$'
+                       r'|[[:cntrl:]]'
+                       r'|[ %~^:?*/\\[])+)')
 
     def sanitize_ref_segment(self, ref):
         """Sanitize a segment of a git reference
@@ -575,8 +565,6 @@ class Stager(BaseProcessor):
             self.handle_debrand_fail()
         self.set_state("STAGED")
         self.notify()
-        self.remove_error_logger()
-        self.close_logfile()
 
     def make_workdir(self):
         self.workdir = dirname = self.get_workdir()
@@ -633,7 +621,6 @@ will overwrite." % (dirname, state))
             raise
 
         # TODO - add sanity checks
-
 
     def init_repo(self):
         """Initialize a new repo"""
@@ -1496,7 +1483,6 @@ failed to apply.
                 self.find_spec()]
         self.log_cmd(cmd, cwd=self.workdir)
 
-
     def notify(self):
         subject = 'Successfully staged %s' % self.nvr
         body = """\
@@ -1528,8 +1514,6 @@ class Pusher(BaseProcessor):
         self.push_git(state)
         self.set_state('PUSHED')
         self.notify()
-        self.remove_error_logger()
-        self.close_logfile()
 
     def check_workdir(self):
         self.workdir = dirname = self.get_workdir()
@@ -1726,7 +1710,6 @@ class Pusher(BaseProcessor):
         # this is a way to ensure we create the necessary subdirs
         self.log_cmd(cmd, cwd=self.options.config['lookaside'])
 
-
     def notify(self):
         subject = 'Successfully pushed %s' % self.nvr
         body = """\
@@ -1896,6 +1879,7 @@ def main(args):
         except Exception:
             task.handle_error()
             sys.exit(2)
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])
