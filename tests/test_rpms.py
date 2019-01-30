@@ -1,25 +1,26 @@
-import re
-import sys
-import shutil
-import tempfile
-import os
-import logging
 import fcntl
+import logging
+import os
+import re
+import shutil
+import sys
+import tempfile
+from multiprocessing import Process
+from subprocess import PIPE, Popen, check_call, check_output
+
 import pytest
 import yaml
-from subprocess import Popen, PIPE, check_call, check_output
-from multiprocessing import Process
-from mock import patch, MagicMock, call
-from ConfigParser import RawConfigParser
-from hamcrest import assert_that, empty, equal_to, not_, calling, raises
+from configparser import RawConfigParser
+from hamcrest import assert_that, calling, empty, equal_to, not_, raises
+from mock import MagicMock, call, patch
 
-from .test_import.alt_src import \
-    main, BaseProcessor, acquire_lock, StartupError, SanityError, InputError, config_defaults
 from .matchers import exits
 
 # ensure python2 before attempting to import sources
 if sys.version_info < (3, 0):
-    from .test_import.alt_src import main, BaseProcessor, acquire_lock
+    from .test_import.alt_src import (main, BaseProcessor, acquire_lock,
+                                      StartupError, SanityError, InputError,
+                                      config_defaults)
 
 xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
 
@@ -646,6 +647,7 @@ def test_stage_only(config_file, pushdir, capsys):
     assert_that(files, empty())
 
 
+@xfail(strict=True)
 def test_not_existing_source_file(config_file):
     rpm = 'foo.src.rpm'
 
@@ -659,6 +661,7 @@ def test_not_existing_source_file(config_file):
     remove_handlers()
 
 
+@xfail(strict=True)
 def test_srpm_brew(mock_koji_session, mock_koji_pathinfo):
     mock_koji_session.return_value.getRPM.return_value = {'arch': 'src', 'build_id': 42}
     mock_koji_pathinfo.return_value.build.return_value = "test_build"
@@ -670,6 +673,7 @@ def test_srpm_brew(mock_koji_session, mock_koji_pathinfo):
         assert_that(processor.source_file, equal_to("test_build/test_relpath"))
 
 
+@xfail(strict=True)
 @pytest.mark.parametrize('getRPM_return_value',
                          [{'arch': 'foo'}, None],
                          ids=("wrong_arch", "source_not_found"))
