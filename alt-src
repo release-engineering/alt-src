@@ -39,7 +39,6 @@ config_defaults = {
     'git_fetch_url_module': None,  # None means same as push
     'push_tags': True,
     'lookaside_rsync_dest': '/srv/cache/lookaside2',
-    'init_rsync_dest': '/srv/git/pushtest/%(package)s.git',
     'log_level': 'INFO',
     'log_file': None,
     'log_format': '%(asctime)s [%(levelname)s] %(message)s',
@@ -1761,8 +1760,7 @@ class Pusher(BaseProcessor):
         # we should have a base repo staged here
         src = os.path.join(self.workdir, "repo_init.git/")
         # note the trailing slash for rsync arg
-        params = {'package': self.package }
-        dst = self.options.config['init_rsync_dest'] % params
+        dst = self.git_push_url()
         cmd = ['rsync', '-ivrpt', src, dst]
         self.log_cmd(cmd, cwd=self.workdir)
 
