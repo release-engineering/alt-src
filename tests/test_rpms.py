@@ -20,7 +20,7 @@ from .matchers import exits
 if sys.version_info < (3, 0):
     from .test_import.alt_src import (main, BaseProcessor, acquire_lock,
                                       StartupError, SanityError, InputError,
-                                      config_defaults)
+                                      config_defaults, Stager)
 
 xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
 
@@ -736,6 +736,24 @@ def test_read_mmd_str(mock_koji_session, mock_koji_pathinfo):
     assert_that(processor.version, equal_to(mmd_dict['stream']))
     assert_that(processor.release, equal_to(str(mmd_dict['version']) + '.' + mmd_dict['context']))
     assert_that(processor.summary, equal_to(mmd_dict['summary']))
+
+
+@xfail(strict=True)
+def test_mmd_no_changelog(mock_koji_session, mock_koji_pathinfo):
+    mmd_str, mmd_dict = get_test_mmd_str_and_dict()
+    mock_koji_pathinfo.return_value.rpm.return_value = "test_relpath"
+
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt")
+    with patch('os.path.isfile', return_value=True):
+        processor = Stager(mock_options)
+        processor.read_source_file()
+        processor.prep_changelog([])
+
+    fn = '%s/changelog.txt' % processor.workdir
+    assert_that(os.path.exists(fn), equal_to(False))
+    assert_that(processor.package, equal_to(mmd_dict['name']))
 
 
 @xfail(strict=True)

@@ -1108,6 +1108,9 @@ failed to apply.
 
     def prep_changelog(self, notes):
         """Generate changelog info"""
+        if self.mmd:
+            # for modules, nothing to do
+            return
         self.logger.info('Preparing changelog entry')
         user = self.options.config['changelog_user']
         verrel = self.get_modded_verrel()
