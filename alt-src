@@ -443,7 +443,8 @@ class BaseProcessor(object):
         statefile = os.path.join(self.workdir, 'state')
         try:
             fo = open(statefile, 'r')
-        except IOError as err:
+        except IOError:
+            _, err = sys.exc_info()[:2]
             if err.errno == errno.ENOENT:
                 self.logger.debug('No state file at %s', statefile)
                 return None
