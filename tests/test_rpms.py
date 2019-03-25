@@ -7,7 +7,6 @@ import sys
 import tempfile
 from multiprocessing import Process
 from subprocess import PIPE, Popen, check_call, check_output
-
 import pytest
 import yaml
 from configparser import RawConfigParser
@@ -103,6 +102,18 @@ def config_file(tempdir, default_config):
     filename = '%s/altsrc-test.cfg' % tempdir
     with open(filename, 'w') as fh:
         cfg.write(fh)
+
+    yield filename
+
+    os.unlink(filename)
+
+
+@pytest.fixture
+def key_file(tempdir):
+    "yields path to pagure api key file"
+    filename = '%s/pagure.key' % tempdir
+    with open(filename, 'w') as f:
+        f.write("token xxxxxx")
 
     yield filename
 
@@ -819,3 +830,41 @@ def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_co
     assert_that(len(err), equal_to(0))
     assert_that(os.path.isfile(staged_module_source_path))
     remove_handlers()
+
+
+@xfail(strict=True)
+def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
+
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+        os.path.join(RPMS_PATH, rpm)
+    ]
+
+    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    config_defaults['pagure_api_key_file'] = key_file
+
+    def side_eff():
+        # create dummy remote repo to succeed git calls
+        cmd = ['git', 'init', '--bare', 'grub2.git']
+        check_call(cmd, cwd=pushdir)
+        return '{"message": "Project \\"rpms/grub2\\" created"}'
+
+    with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+        with patch("tests.test_import.alt_src.urlopen") as mock_resp:
+            mock_resp.return_value.read.side_effect = side_eff
+            # call main to push
+            assert_that(calling(main).with_args(options), exits(0))
+            mock_resp.assert_called_once()
+
+    _, err = capsys.readouterr()
+    assert_that(len(err), equal_to(0))
+
+    # lookaside dir should have content
+    lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))

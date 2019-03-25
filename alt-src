@@ -18,6 +18,9 @@ import sys
 import time
 import traceback
 import yaml
+from urllib import urlencode
+from urllib2 import Request, urlopen
+import simplejson as json
 from optparse import OptionParser
 
 import koji
@@ -58,6 +61,8 @@ config_defaults = {
     'smtp_log_to': '',
     'wait_time': 3600,
     'sleep_interval': 60,
+    'pagure_api_key_file': None,
+    'pagure_repo_init_api': None,
 }
 
 config_int_opts = set([])
@@ -603,6 +608,11 @@ Staging failed for %(nvr)s.
             if logfilename:
                 self.logger.info("Logfile: %s", logfilename)
 
+    def check_push_to_pagure(self):
+        if self.options.config['pagure_repo_init_api']:
+            return True
+        return False
+
 
 class Stager(BaseProcessor):
 
@@ -758,16 +768,17 @@ If you find this file in a distro specific branch, it means that no content has 
         fo.write(self.summary)
         fo.write('\n')
         fo.close()
-        # add gitblit options to git config
-        # XXX this content should not be hard coded
-        git_config = os.path.join(self.workdir, "repo_init.git", "config")
-        fo = file(git_config, 'a')
-        params = {
-            'summary' : self.summary,
-            'package' : self.package,
-            # anything else?
-        }
-        fo.write(self.gitblit_config_format % params)
+        if not self.check_push_to_pagure():
+            # add gitblit options to git config
+            # XXX this content should not be hard coded
+            git_config = os.path.join(self.workdir, "repo_init.git", "config")
+            fo = file(git_config, 'a')
+            params = {
+                'summary' : self.summary,
+                'package' : self.package,
+                # anything else?
+            }
+            fo.write(self.gitblit_config_format % params)
 
     def setup_checkout(self):
         """Setup our working checkout"""
@@ -1679,8 +1690,13 @@ class Pusher(BaseProcessor):
             cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
             output, rv = self.get_output(cmd, cwd=self.checkout, fatal=False)
             if rv:
-                #error talking to remote. Could be that that repo does not exist, or could be a network error
-                self.init_remote_repo()
+                # error talking to remote. Could be that that repo does not exist,
+                # or could be a network error
+                self.logger.warning("Unable to reach remote repo: %s", self.package)
+                if self.check_push_to_pagure():
+                    self.init_pagure_remote_repo()
+                else:
+                    self.init_remote_repo()
             new_branch = False
             if not output:
                 # XXX we should check the output more thoroughly
@@ -1702,7 +1718,10 @@ class Pusher(BaseProcessor):
             #TODO assert that stage_branch is a descendant of our_import_tag
             if new_branch:
                 # branch from master if new
-                cmd = ['git', 'checkout', '-b', pushbranch, 'master']
+                # repos on pagure might not have a master available
+                cmd = ['git', 'checkout', '-b', pushbranch]
+                if not self.check_push_to_pagure():
+                    cmd.append('master')
             else:
                 cmd = ['git', 'checkout', pushbranch]
             self.log_cmd(cmd, cwd=self.checkout)
@@ -1767,6 +1786,34 @@ class Pusher(BaseProcessor):
         dst = self.git_push_url()
         cmd = ['rsync', '-ivrpt', src, dst]
         self.log_cmd(cmd, cwd=self.workdir)
+
+    def init_pagure_remote_repo(self):
+        with open(self.options.config['pagure_api_key_file'], 'r') as keyfile:
+            key = keyfile.read()
+
+        values = {
+            'name': self.package,
+            'description': self.summary,
+            'namespace': 'modules' if self.mmd else 'rpms',
+            'private': False,
+            'wait': True,
+        }
+        headers = {
+            'Authorization': key,
+        }
+
+        self.logger.info("Creating pagure repo:: %s", values)
+        data = urlencode(values)
+        req = Request(
+            self.options.config['pagure_repo_init_api'],
+            data=data,
+            headers=headers,
+        )
+
+        resp = urlopen(req)
+        resp = json.loads(resp.read())
+        self.logger.info(resp)
+
 
     def push_lookaside(self):
         meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
