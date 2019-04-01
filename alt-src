@@ -1835,8 +1835,13 @@ class Pusher(BaseProcessor):
         self.log_cmd(cmd, cwd=self.workdir)
 
     def init_pagure_remote_repo(self):
-        with open(self.options.config['pagure_api_key_file'], 'r') as keyfile:
+        keyfile = None
+        try:
+            keyfile = open(self.options.config['pagure_api_key_file'], 'r')
             key = keyfile.read()
+        finally:
+            if keyfile:
+                keyfile.close()
 
         values = {
             'name': self.package,
