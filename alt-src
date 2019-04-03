@@ -1270,7 +1270,9 @@ failed to apply.
                                   data['replace'],
                                   current_data)
                 parent[parent_key] = replaced
-        f = open(self.source_file, "w")
+        f = open(os.path.join(self.checkout,
+                              "SOURCES",
+                              os.path.basename(self.source_file)), "w")
         try:
             yaml.dump(src_mmd_parsed_copy, f)
         finally:

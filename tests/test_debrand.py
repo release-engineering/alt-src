@@ -215,6 +215,8 @@ def rules_dir(test_dir):
 def checkout_dir(test_dir):
     d = test_dir / 'checkout'
     d.mkdir()
+    s = d / 'SOURCES'
+    s.mkdir()
     yield d
 
 
@@ -246,7 +248,7 @@ def read_mmd(fake_mmd, fake_src_mmd, checkout_dir):
     patched_koji_client_session.return_value.getBuild.return_value = {
         'extra': {'typeinfo': {'module': {'modulemd_str': fake_mmd}}}}
     patched_koji_path_info.typedir = checkout_dir
-    with open(str(checkout_dir / "modulemd.src.txt"), "w") as f:
+    with open(str(checkout_dir / 'SOURCES' / "modulemd.src.txt"), "w") as f:
         yaml.dump(fake_src_mmd, f)
     yield fake_mmd
     koji_client_session.stop()
@@ -267,7 +269,8 @@ def options(request, rules_dir):
         'git_name': 'pytest',
         'git_email': 'pytest@notexists.com',
         'koji_hub': None,
-        'koji_topdir': None
+        'koji_topdir': None,
+        'commit_format': "fake imported: %s"
     }
     yield MagicMock(cfile=None,
                     source=request.param['source'],
@@ -458,10 +461,13 @@ def test_rule_script(stager_setup, expected):
 def test_rule_mmd(stager_setup, expected):
     stager, _, _, patched_isfile, checkout_dir = stager_setup #pylint: disable=unused-variable
     patched_isfile.side_effect = [True, True, True]
-    stager.source_file = os.path.join(checkout_dir, "modulemd.src.txt")
+    stager.source_file = os.path.join(MODULES_PATH, "modulemd.src.txt")
+    stager.get_output.side_effect = [('\n', 0), ('', 0), ('\n', 0)]
+
+    stager.import_sources()
     stager.read_source_file()
     stager.debrand()
-    with open(os.path.join(checkout_dir, "modulemd.src.txt")) as f:
+    with open(os.path.join(checkout_dir, "SOURCES", "modulemd.src.txt")) as f:
         mmd = f.read()
         print(mmd)
         assert_that(mmd, expected)
@@ -475,10 +481,13 @@ def test_rule_mmd(stager_setup, expected):
 def test_rule_mmd_no_change(stager_setup):
     stager, _, _, patched_isfile, checkout_dir = stager_setup # pylint: disable=unused-variable
     patched_isfile.side_effect = [True, True, True]
-    stager.source_file = os.path.join(checkout_dir, "modulemd.src.txt")
+    stager.source_file = os.path.join(MODULES_PATH, "modulemd.src.txt")
+    stager.get_output.side_effect = [('\n', 0), ('', 0), ('\n', 0)]
+
+    stager.import_sources()
     stager.read_source_file()
     stager.debrand()
-    with open(os.path.join(checkout_dir, "modulemd.src.txt")) as f:
+    with open(os.path.join(checkout_dir, "SOURCES", "modulemd.src.txt")) as f:
         mmd1 = yaml.load(f)
 
     with open(os.path.join(MODULES_PATH, "modulemd.src.txt")) as f:
