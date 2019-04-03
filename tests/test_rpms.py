@@ -741,6 +741,7 @@ def test_read_mmd_str(mock_koji_session, mock_koji_pathinfo):
     mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt")
     with patch('os.path.isfile', return_value=True):
         processor = BaseProcessor(mock_options)
+        processor.source_file = os.path.join(MODULES_PATH, "modulemd.src.txt")
         processor.read_source_file()
 
     assert_that(processor.package, equal_to(mmd_dict['name']))
@@ -759,6 +760,7 @@ def test_mmd_no_changelog(mock_koji_session, mock_koji_pathinfo):
     mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt")
     with patch('os.path.isfile', return_value=True):
         processor = Stager(mock_options)
+        processor.source_file = os.path.join(MODULES_PATH, "modulemd.src.txt")
         processor.read_source_file()
         processor.prep_changelog([])
 
@@ -776,6 +778,7 @@ def test_git_url_module(mock_koji_session, mock_koji_pathinfo):
     mock_options = MagicMock(brew=True, source="build_nvr:modulemd.src.txt", config=config_defaults)
     with patch('os.path.isfile', return_value=True):
         processor = BaseProcessor(mock_options)
+        processor.source_file = os.path.join(MODULES_PATH, "modulemd.src.txt")
         processor.read_source_file()
 
         git_push_url = processor.git_push_url()

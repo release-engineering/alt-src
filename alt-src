@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import ConfigParser
+import copy
 import cStringIO
 import datetime
 import errno
@@ -145,6 +146,8 @@ class BaseProcessor(object):
         self.error_log = None
 
         self.mmd = None
+        self.mmd_parsed = None
+        self.src_mmd_parsed = None
 
         self.logfile = None
         self.workdir = None
@@ -306,8 +309,13 @@ class BaseProcessor(object):
             self.read_srpm()
 
     def read_mmd(self):
-        mmd_parsed = yaml.load(self.mmd)
-        module_data = mmd_parsed['data']
+        self.mmd_parsed = yaml.load(self.mmd)
+        module_data = self.mmd_parsed['data']
+        f = open(self.source_file)
+        try:
+            self.src_mmd_parsed = yaml.load(f)
+        finally:
+            f.close()
 
         name = module_data['name']
         version = module_data['stream']
@@ -330,6 +338,7 @@ class BaseProcessor(object):
         self.version = data['version']
         self.release = data['release']
         self.summary = data['summary']
+        return self.headers
 
     def get_package_filter(self, pfilter):
         """Parse a black or white list filter and apply branch checks
@@ -615,6 +624,9 @@ Staging failed for %(nvr)s.
 
 
 class Stager(BaseProcessor):
+    MMD_DEBRAND_RTYPES = [
+        "mmd"
+    ]
 
     def run(self):
         self.add_error_logger()
@@ -992,7 +1004,12 @@ If you find this file in a distro specific branch, it means that no content has 
             if len(parts) < 2:
                 continue
             rtype, key = parts
-            rules.append((key, rtype, section))
+            if self.mmd:
+                if rtype in self.MMD_DEBRAND_RTYPES:
+                    rules.append((key, rtype, section))
+            else:
+                if rtype not in self.MMD_DEBRAND_RTYPES:
+                    rules.append((key, rtype, section))
         rules.sort()
 
         if not rules:
@@ -1228,6 +1245,36 @@ failed to apply.
         fo = file(fn, 'w')
         fo.write(text)
         fo.close()
+
+    def rule_handler_mmd(self, data):
+        src_mmd_parsed_copy = copy.deepcopy(self.src_mmd_parsed)
+        stack = [(src_mmd_parsed_copy, [src_mmd_parsed_copy],
+                  0, data["yaml_path"].split("\n"))]
+        while stack:
+            current_data, parent, parent_key, matching_path = stack.pop(0)
+            if not matching_path:
+                continue
+
+            gen = None
+            if isinstance(current_data, list):
+                gen = enumerate(current_data)
+            elif isinstance(current_data, dict):
+                gen = current_data.items()
+            if gen:
+                for key, val in gen:
+                    if re.match(matching_path[0], str(key)):
+                        stack.append((val, current_data, key, matching_path[1:]))
+
+            if isinstance(current_data, basestring):
+                replaced = re.sub(matching_path[0],
+                                  data['replace'],
+                                  current_data)
+                parent[parent_key] = replaced
+        f = open(self.source_file, "w")
+        try:
+            yaml.dump(src_mmd_parsed_copy, f)
+        finally:
+            f.close()
 
     def handle_re_line(self, data):
         if 'file' in data:

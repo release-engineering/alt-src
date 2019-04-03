@@ -1,0 +1,65 @@
+---
+document: modulemd
+version: 2
+data:
+  name: postgresql
+  stream: 9.6
+  version: 820190104140337
+  context: 9edba152
+  summary: PostgreSQL server and client module
+  description: >-
+    PostgreSQL is an advanced Object-Relational database management system (DBMS).
+    The postgresql-server package contains the programs needed to create and run a
+    PostgreSQL server, which will in turn allow you to create and maintain PostgreSQL
+    databases. The base postgresql package contains the client programs that you'll
+    need to access a PostgreSQL DBMS server.
+  license:
+    module:
+    - MIT
+  xmd:
+    mbs:
+      scmurl: git://pkgs.devel.redhat.com/modules/postgresql?#bb84a524b981df35490fbdcbfef15af1bfa98c8c
+      buildrequires:
+        platform:
+          stream: el8
+          ursine_rpms: 
+          filtered_rpms: []
+          version: 2
+          koji_tag: module-rhel-8.0.0-build
+          context: 00000000
+          stream_collision_modules: 
+          ref: virtual
+      mse: TRUE
+      rpms:
+        postgresql:
+          ref: b2540903b308573c87ab276282be0cce117c6b6c
+      commit: bb84a524b981df35490fbdcbfef15af1bfa98c8c
+  dependencies:
+  - buildrequires:
+      platform: [el8]
+    requires:
+      platform: [el8]
+  references:
+    community: https://www.postgresql.org
+    documentation: https://www.postgresql.org/docs/10/index.html
+    tracker: http://bugzilla.redhat.com
+  profiles:
+    client:
+      rpms:
+      - postgresql
+    server:
+      rpms:
+      - postgresql-server
+  api:
+    rpms:
+    - postgresql
+    - postgresql-server
+  components:
+    rpms:
+      postgresql:
+        rationale: Module API.
+        repository: git://pkgs.devel.redhat.com/rpms/postgresql
+        cache: http://pkgs.devel.redhat.com/repo/pkgs/postgresql
+        ref: stream-9.6
+        arches: [aarch64, i686, ppc64le, s390x, x86_64]
+...
