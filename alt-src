@@ -1848,10 +1848,13 @@ class Pusher(BaseProcessor):
         values = {
             'name': self.package,
             'description': self.summary,
-            'namespace': 'modules' if self.mmd else 'rpms',
+            'namespace': 'rpms',
             'private': False,
             'wait': True,
         }
+        if self.mmd:
+            values['namespace'] = 'modules'
+
         headers = {
             'Authorization': key,
         }

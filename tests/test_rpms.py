@@ -871,3 +871,45 @@ def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
     lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
+    remove_handlers()
+
+
+@xfail(strict=True)
+def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
+                               mock_koji_session, mock_koji_pathinfo):
+    """ verifies modules are pushed to pagure repo without any error """
+
+    branch = 'c7'
+    modulemd = 'fake-nvr:modulemd.src.txt'
+
+    options = ['-v',
+               '-c', config_file,
+               '--brew',
+               '--push',
+               branch,
+               modulemd
+              ]
+
+    mmd_str, mmd_dict = get_test_mmd_str_and_dict()
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
+
+    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    config_defaults['pagure_api_key_file'] = key_file
+
+    def side_eff():
+        # create dummy remote repo to succeed git calls
+        cmd = ['git', 'init', '--bare', '%s.git' % mmd_dict['name']]
+        check_call(cmd, cwd=pushdir)
+        return '{"message": "Project \\"modules/%s\\" created"}' % mmd_dict['name']
+
+    with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+        with patch("tests.test_import.alt_src.urlopen") as mock_resp:
+            mock_resp.return_value.read.side_effect = side_eff
+            # call main to push
+            assert_that(calling(main).with_args(options), exits(0))
+            mock_resp.assert_called_once()
+
+    _, err = capsys.readouterr()
+    assert_that(len(err), equal_to(0))
