@@ -19,7 +19,7 @@ from .matchers import exits
 if sys.version_info < (3, 0):
     from .test_import.alt_src import (main, BaseProcessor, acquire_lock,
                                       StartupError, SanityError, InputError,
-                                      config_defaults, Stager)
+                                      config_defaults, Stager, CommandError)
 
 xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
 
@@ -656,6 +656,63 @@ def test_stage_only(config_file, pushdir, capsys):
     assert_that(len(err), equal_to(0))
     files = os.listdir(pushdir)
     assert_that(files, empty())
+    remove_handlers()
+
+
+@xfail(strict=True)
+def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
+    """
+    check staging on new branch in repo having no master branch
+    """
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+    err_cmd_call_cnt = [1]
+
+    workdir = default_config['stagedir']+'/c7/g/grub2/grub2-2.02-0.64.el7'
+    os.makedirs(workdir)
+
+    def init_repo():
+        # init repo without master
+        cmd = ['git', 'init', '--bare', 'repo_init.git']
+        check_call(cmd, cwd=workdir)
+
+    def log_cmd(cmd, fatal=True, **kwargs):
+        # fail creating orphan branch first time
+        # other calls respond as executed
+        err_cmd = ['git', 'checkout', '--orphan', 'altsrc-stage-c7']
+
+        if err_cmd == cmd and err_cmd_call_cnt[0] == 1:
+            err_cmd_call_cnt[0] += 1
+            if fatal:
+                raise CommandError("command failed: %r" % err_cmd)
+            return 1
+        else:
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+            kwargs['close_fds'] = True
+            proc = Popen(cmd, **kwargs)
+            ret = proc.wait()
+            if ret and fatal:
+                raise CommandError("command failed: %r" % cmd)
+            return ret
+
+    options = ['-v',
+               '-c', config_file,
+               'c7',
+               os.path.join(RPMS_PATH, rpm)
+              ]
+
+    with patch("tests.test_import.alt_src.Stager.init_new_repo") as mock_repo:
+        with patch("tests.test_import.alt_src.BaseProcessor.log_cmd") as mock_cmd:
+            mock_cmd.side_effect = log_cmd
+            mock_repo.side_effect = init_repo
+            assert_that(calling(main).with_args(options), exits(0))
+
+    _, err = capsys.readouterr()
+
+    assert_that(len(err), equal_to(0))
+    files = os.listdir(pushdir)
+    assert_that(files, empty())
+    remove_handlers()
 
 
 @xfail(strict=True)

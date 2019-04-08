@@ -822,7 +822,14 @@ If you find this file in a distro specific branch, it means that no content has 
             if rv:
                 self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
                 cmd = ['git', 'checkout', '--orphan', branchname]
-                self.log_cmd(cmd, cwd=dst)
+                rv = self.log_cmd(cmd, cwd=dst, fatal=False)
+                if rv:
+                    # empty HEAD maybe, creating and pointing to master
+                    cmd = self.git_base_cmd()
+                    cmd.extend(['commit', '--allow-empty', '-m', 'init_branch'])
+                    self.log_cmd(cmd, cwd=dst)
+                    cmd = ['git', 'checkout', '--orphan', branchname]
+                    self.log_cmd(cmd, cwd=dst)
                 cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
                 self.log_cmd(cmd, cwd=dst)
             else:
