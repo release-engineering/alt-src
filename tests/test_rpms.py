@@ -970,3 +970,68 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
 
     _, err = capsys.readouterr()
     assert_that(len(err), equal_to(0))
+
+
+@xfail(strict=True)
+@pytest.mark.parametrize('cmd_args,package,expected_extra_dir', [
+    ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', ''),
+    (['--brew', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
+])
+@patch("tests.test_import.alt_src.Stager.default_tries")
+@patch("tests.test_import.alt_src.Stager.debrand")
+@patch("tests.test_import.alt_src.Pusher.push_git")
+@patch('os.path.isfile', side_effect=[True, True,] + 100*[False,])
+def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand,
+                               patched_default_tries, config_file, key_file,
+                               pushdir, capsys, mock_koji_session,
+                               mock_koji_pathinfo, default_config,
+                               cmd_args, package, expected_extra_dir):
+
+    patched_default_tries.return_value = 1
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+    ] + cmd_args
+
+    mmd_str, _ = get_test_mmd_str_and_dict()
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
+
+    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    config_defaults['pagure_api_key_file'] = key_file
+
+    def side_eff():
+        # create dummy remote repo to succeed git calls
+        cmd = ['git', 'init', '--bare', 'grub2.git']
+        check_call(cmd, cwd=pushdir)
+        return '{"message": "Project \\"rpms/grub2\\" created"}'
+
+    exists_original = os.path.exists
+    repo_dir = os.path.join(
+        default_config['gitdir'],
+        expected_extra_dir,
+        "%s.git" % package
+    )
+    with patch("os.path.exists") as mocked_exists:
+        mocked_exists.side_effect = exists_original
+        with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+            with patch("tests.test_import.alt_src.urlopen") as mock_resp:
+                mock_resp.return_value.read.side_effect = side_eff
+                main(options)
+                repo_dir = os.path.join(
+                    default_config['gitdir'],
+                    expected_extra_dir,
+                    "%s.git" % package
+                )
+                mocked_exists.assert_any_call(repo_dir)
+
+    std, _ = capsys.readouterr()
+    missing_repo_str="Remote repo is missing: %s" % (
+        default_config['git_push_url'] % {"package": package},
+    )
+    assert missing_repo_str in std
+    assert "Initializing new repo:" in std

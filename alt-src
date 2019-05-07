@@ -691,7 +691,10 @@ will overwrite." % (dirname, state))
     def sync_repo(self):
         """Sync the primary (bare) git repo from the (local) master"""
 
-        repo = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
+        modules_dir = ""
+        if self.mmd:
+            modules_dir = "modules"
+        repo = os.path.join(self.options.config['gitdir'], modules_dir, "%s.git" % self.package)
 
         if not os.path.exists(repo):
             self.init_repo()
@@ -726,9 +729,13 @@ will overwrite." % (dirname, state))
             self.init_new_repo()
             return
         # otherwise we just need to clone it
+        modules_dir = ""
+        if self.mmd:
+            modules_dir = "modules" # pragma: no cover
+        git_dir = os.path.join(self.options.config['gitdir'], modules_dir)
         koji.ensuredir(self.options.config['gitdir'])
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
-        self.log_cmd(cmd, cwd=(self.options.config['gitdir']))
+        self.log_cmd(cmd, cwd=git_dir)
 
     gitblit_config_format = r'''
 [gitblit]
@@ -795,7 +802,11 @@ If you find this file in a distro specific branch, it means that no content has 
     def setup_checkout(self):
         """Setup our working checkout"""
 
-        src = os.path.join(self.options.config['gitdir'], "%s.git" % self.package)
+        modules_dir = ""
+        if self.mmd:
+            modules_dir = "modules"
+
+        src = os.path.join(self.options.config['gitdir'], modules_dir, "%s.git" % self.package)
         if not os.path.exists(src):
             # should be new repo case
             src = os.path.join(self.workdir, "repo_init.git")
