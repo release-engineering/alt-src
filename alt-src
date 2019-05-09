@@ -731,7 +731,7 @@ will overwrite." % (dirname, state))
         # otherwise we just need to clone it
         modules_dir = ""
         if self.mmd:
-            modules_dir = "modules" # pragma: no cover
+            modules_dir = "modules"
         git_dir = os.path.join(self.options.config['gitdir'], modules_dir)
         koji.ensuredir(self.options.config['gitdir'])
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]

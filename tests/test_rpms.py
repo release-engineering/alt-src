@@ -1035,3 +1035,67 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
     )
     assert missing_repo_str in std
     assert "Initializing new repo:" in std
+
+@xfail(strict=True)
+@pytest.mark.parametrize('cmd_args,package,expected_extra_dir', [
+    ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', ''),
+    (['--brew', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
+])
+@patch("tests.test_import.alt_src.Pusher.push_lookaside")
+@patch("tests.test_import.alt_src.Stager.import_sources")
+@patch("tests.test_import.alt_src.BaseProcessor.log_cmd", return_value=0)
+@patch("tests.test_import.alt_src.BaseProcessor.get_output")
+@patch("tests.test_import.alt_src.BaseProcessor.default_tries")
+@patch("tests.test_import.alt_src.Stager.debrand")
+@patch("tests.test_import.alt_src.Pusher.push_git")
+@patch('os.path.isfile', side_effect=[True, True,] + 100*[False, ])
+def test_push_remote_exists(patched_isfile, patched_push_git, patched_debrand,
+                            patched_default_tries, patched_get_output,
+                            patched_log_cmd, patched_wipe_git_dir,
+                            patched_push_lookaside,
+                            config_file, key_file,
+                            pushdir, capsys, mock_koji_session,
+                            mock_koji_pathinfo, default_config,
+                            cmd_args, package, expected_extra_dir):
+
+    patched_default_tries.return_value = 1
+
+    options = [
+        '-v',
+        '-c', config_file,
+        '--push',
+        'c7',
+    ] + cmd_args
+
+    def patched_get_output_sf(cmd, *args, **kwargs):
+        if cmd[:2] == ["git", "ls-remote"]:
+            ret = ("", 0)
+        else:
+            ret = patched_get_output.get_original()(cmd, *args, **kwargs)
+
+        return ret
+
+    patched_get_output.side_effect = patched_get_output_sf
+
+    mmd_str, _ = get_test_mmd_str_and_dict()
+    binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
+    mock_koji_session.return_value.getBuild.return_value = binfo
+    mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
+
+    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    config_defaults['pagure_api_key_file'] = key_file
+
+    exists_original = os.path.exists
+    repo_dir = os.path.join(
+        default_config['gitdir'],
+        expected_extra_dir,
+        "%s.git" % package
+    )
+    with patch("os.path.exists") as mocked_exists:
+        mocked_exists.side_effect = exists_original
+        with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+            main(options)
+            mocked_exists.assert_any_call(repo_dir)
+
+    std, _ = capsys.readouterr()
+    assert "Initializing new repo:" not in std
