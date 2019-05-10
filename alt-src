@@ -733,7 +733,7 @@ will overwrite." % (dirname, state))
         if self.mmd:
             modules_dir = "modules"
         git_dir = os.path.join(self.options.config['gitdir'], modules_dir)
-        koji.ensuredir(self.options.config['gitdir'])
+        koji.ensuredir(git_dir)
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
         self.log_cmd(cmd, cwd=git_dir)
 
