@@ -165,14 +165,17 @@ class BaseProcessor(object):
                 # expected source arg: <nvr>:module.src.txt
                 self.nvr = self.options.source.rsplit(':', 1)[0]
                 self.source_file, self.mmd = self.get_koji_module_src()
+                self.rpms_or_module_dir = 'modules'
 
             elif self.options.source.endswith('src.rpm'):
                 self.source_file = self.get_koji_srpm()
+                self.rpms_or_module_dir = 'rpms'
             else:
                 raise StartupError("Unsupported source: %s" % self.options.source)
 
         else:
             self.source_file = self.options.source
+            self.rpms_or_module_dir = 'rpms'
 
         if not os.path.isfile(self.source_file):
             raise StartupError, "No such file: %s" % self.source_file
@@ -409,6 +412,7 @@ class BaseProcessor(object):
         parts = [
             os.path.join(self.options.config['stagedir']),
             self.options.branch,
+            self.rpms_or_module_dir,
             letter,
             self.package,
             self.nvr,
@@ -691,10 +695,8 @@ will overwrite." % (dirname, state))
     def sync_repo(self):
         """Sync the primary (bare) git repo from the (local) master"""
 
-        modules_dir = ""
-        if self.mmd:
-            modules_dir = "modules"
-        repo = os.path.join(self.options.config['gitdir'], modules_dir, "%s.git" % self.package)
+        repo = os.path.join(self.options.config['gitdir'], self.rpms_or_module_dir,
+                            "%s.git" % self.package)
 
         if not os.path.exists(repo):
             self.init_repo()
@@ -729,10 +731,7 @@ will overwrite." % (dirname, state))
             self.init_new_repo()
             return
         # otherwise we just need to clone it
-        modules_dir = ""
-        if self.mmd:
-            modules_dir = "modules"
-        git_dir = os.path.join(self.options.config['gitdir'], modules_dir)
+        git_dir = os.path.join(self.options.config['gitdir'], self.rpms_or_module_dir)
         koji.ensuredir(git_dir)
         cmd = ['git', 'clone', '--bare', git_url, "%s.git" % self.package]
         self.log_cmd(cmd, cwd=git_dir)
@@ -802,11 +801,8 @@ If you find this file in a distro specific branch, it means that no content has 
     def setup_checkout(self):
         """Setup our working checkout"""
 
-        modules_dir = ""
-        if self.mmd:
-            modules_dir = "modules"
-
-        src = os.path.join(self.options.config['gitdir'], modules_dir, "%s.git" % self.package)
+        src = os.path.join(self.options.config['gitdir'],
+                           self.rpms_or_module_dir, "%s.git" % self.package)
         if not os.path.exists(src):
             # should be new repo case
             src = os.path.join(self.workdir, "repo_init.git")

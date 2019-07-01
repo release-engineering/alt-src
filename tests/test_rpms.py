@@ -398,8 +398,8 @@ def test_repush_with_state_init(config_file, pushdir, lookasidedir, default_conf
     out_lines = out.splitlines()
 
     assert_that(len(err), equal_to(0))
-    expected = "[WARNING] Incomplete staging dir %s/c7/g/grub2/grub2-2.02-0.64.el7 (state=INIT), \
-will overwrite." % default_config['stagedir']
+    expected = "[WARNING] Incomplete staging dir %s/c7/rpms/g/grub2/grub2-2.02-0.64.el7 \
+(state=INIT), will overwrite." % default_config['stagedir']
     assert [l for l in out_lines if expected in l]
 
     # lookaside dir should have content
@@ -483,7 +483,7 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     # before push again, we need to change the branch to some unkown branch
     # to simulate what would happen in push_git
     cmd = 'git checkout -b arandombranch'
-    checkout = default_config['stagedir']+'/c7/g/grub2/grub2-2.02-0.64.el7/checkout'
+    checkout = default_config['stagedir']+'/c7/rpms/g/grub2/grub2-2.02-0.64.el7/checkout'
     check_call(cmd.split(), cwd=checkout)
 
     # remove handlers to avoid duplicate logs/errors
@@ -497,7 +497,8 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     out_lines = out.splitlines()
     assert_that(len(err), equal_to(0))
 
-    expected = '[WARNING] Already successfully staged: %s/c7/g/grub2/grub2-2.02-0.64.el7' % default_config['stagedir']
+    expected = '[WARNING] Already successfully staged: \
+%s/c7/rpms/g/grub2/grub2-2.02-0.64.el7' % default_config['stagedir']
     assert [l for l in out_lines if expected in l]
 
     # lookaside dir should have content
@@ -667,7 +668,7 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
     err_cmd_call_cnt = [1]
 
-    workdir = default_config['stagedir']+'/c7/g/grub2/grub2-2.02-0.64.el7'
+    workdir = default_config['stagedir']+'/c7/rpms/g/grub2/grub2-2.02-0.64.el7'
     os.makedirs(workdir)
 
     def init_repo():
@@ -877,6 +878,7 @@ def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_co
 
     staged_module_source_path = os.path.join(default_config['stagedir'],
                                              branch,
+                                             "modules",
                                              mmd_dict['name'][0],
                                              mmd_dict['name'],
                                              'fake-nvr',
@@ -974,7 +976,7 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
 
 @xfail(strict=True)
 @pytest.mark.parametrize('cmd_args,package,expected_extra_dir', [
-    ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', ''),
+    ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', 'rpms'),
     (['--brew', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
 ])
 @patch("tests.test_import.alt_src.Stager.default_tries")
@@ -1038,7 +1040,7 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
 
 @xfail(strict=True)
 @pytest.mark.parametrize('cmd_args,package,expected_extra_dir', [
-    ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', ''),
+    ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', 'rpms'),
     (['--brew', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
 ])
 @patch("tests.test_import.alt_src.Pusher.push_lookaside")
