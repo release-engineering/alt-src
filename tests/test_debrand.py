@@ -274,7 +274,7 @@ def options(request, rules_dir):
     }
     yield MagicMock(cfile=None,
                     source=request.param['source'],
-                    brew=request.param.get('brew', False),
+                    koji=request.param.get('koji', False),
                     branch=request.param['branch'],
                     config=config)
 
@@ -318,7 +318,7 @@ def stager_setup_params(source, branch, rule_cfg):
 
 def stager_setup_mmd_params(modname, branch, rule_cfg):
     return (None,
-            {'source': 'modulemd.src.txt', 'branch': branch, "brew": True},
+            {'source': 'modulemd.src.txt', 'branch': branch, "koji": True},
             {'fname': modname, 'rule_cfg': rule_cfg},
             {'fname': modname})
 

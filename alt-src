@@ -52,13 +52,12 @@ config_defaults = {
     'changelog_user': 'CentOS Sources <bugs@centos.org>',
     'git_name': 'CentOS Sources',
     'git_email': 'bugs@centos.org',
-    'koji_hub': 'https://brewhub.engineering.redhat.com/brewhub',
-    'koji_topdir': '/mnt/redhat/brewroot',
+    'koji_hub': 'https://koji.fedoraproject.org/kojihub/',
+    'koji_topdir': '/mnt/kojiroot/',
     'smtp_enabled': True,
     'smtp_host': 'localhost',
-    # 'smtp_host' : 'smtp.corp.redhat.com',
-    'smtp_from': 'Alt Source Stager <altsrc@redhat.com>',
-    'smtp_to': 'mike',
+    'smtp_from': 'Alt Source Stager <altsrc@example.com>',
+    'smtp_to': 'username',
     'smtp_log_to': '',
     'wait_time': 3600,
     'sleep_interval': 60,
@@ -160,7 +159,7 @@ class BaseProcessor(object):
         self.version = None
         self.summary = None
 
-        if self.options.brew:
+        if self.options.koji:
             if self.options.source.endswith('modulemd.src.txt'):
                 # expected source arg: <nvr>:module.src.txt
                 self.nvr = self.options.source.rsplit(':', 1)[0]
@@ -2021,8 +2020,8 @@ def main(args):
     """process options from command line"""
 
     usage = _("%prog [options] branch source\n"
-              "source can be <nvr>.src.rpm or <nvr>:modulemd.src.txt only when used with --brew,\n"
-              "without --brew srpm as source is supported only, <nvr>[.src.rpm] is accepted then.")
+              "source can be <nvr>.src.rpm or <nvr>:modulemd.src.txt only when used with --koji,\n"
+              "without --koji srpm as source is supported only, <nvr>[.src.rpm] is accepted then.")
     parser = OptionParser(usage=usage)
     parser.add_option("-c", "--config", dest="cfile", default='/etc/altsrc.conf',
                       help=_("use alternate configuration file"), metavar="FILE")
@@ -2038,8 +2037,8 @@ def main(args):
                       help=_("push content even if it appears to be present already"))
     parser.add_option("--push", action="store_true", default=False,
                       help=_("push staged sources"))
-    parser.add_option("--brew", action="store_true", default=False,
-                      help=_("pull sources from Brew"))
+    parser.add_option("--koji", "--brew", action="store_true", default=False,
+                      help=_("pull sources from Koji"))
     parser.add_option("--keep-sources", action="store_true", default=False,
                       help=_("keep lookaside sources in staging checkout"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
