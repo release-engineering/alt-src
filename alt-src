@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+'''
+Given an srpm and product, stage for alt-src release
+'''
 
 import ConfigParser
 import copy
@@ -9,6 +12,7 @@ import fcntl
 import fnmatch
 import hashlib
 import logging
+from optparse import OptionParser
 import os
 import os.path
 import re
@@ -18,20 +22,16 @@ import subprocess
 import sys
 import time
 import traceback
-import yaml
 from urllib import urlencode
 from urllib2 import Request, urlopen
+import yaml
 import simplejson as json
-from optparse import OptionParser
 
 import koji
 import rpm
 
-'''
-Given an srpm and product, stage for alt-src release
-'''
 
-config_defaults = {
+CONFIG_DEFAULTS = {
     'stagedir': '/srv/cache/stage',
     'gitdir': '/srv/git',
     'rulesdir': '/var/lib/altsrc/rules',
@@ -65,16 +65,16 @@ config_defaults = {
     'pagure_repo_init_api': None,
 }
 
-config_int_opts = set([])
-config_bool_opts = set(['smtp_enabled', 'push_tags', 'debrand'])
+CONFIG_INT_OPTS = set([])
+CONFIG_BOOL_OPTS = set(['smtp_enabled', 'push_tags', 'debrand'])
 
 
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
         die("Missing config file: %s" % cfile)
-    cp = ConfigParser.RawConfigParser()
-    cp.read(cfile)
-    if not cp.has_section('altsrc'):
+    confp = ConfigParser.RawConfigParser()
+    confp.read(cfile)
+    if not confp.has_section('altsrc'):
         die("Configuration file missing [altsrc] section: %s" % cfile)
 
     #apply overrides from command line
@@ -84,17 +84,17 @@ def get_config(cfile, overrides):
         if len(parts) != 2:
             die('Invalid option specification: %s\nUse OPT=VALUE' % opt)
         key, value = parts
-        cp.set('altsrc', key, value)
+        confp.set('altsrc', key, value)
 
     #generate config dictionary
-    config = dict(config_defaults)  #copy
-    for key in cp.options('altsrc'):
-        if key in config_int_opts:
-            config[key] = cp.getint('altsrc', key)
-        elif key in config_bool_opts:
-            config[key] = cp.getboolean('altsrc', key)
+    config = dict(CONFIG_DEFAULTS)  #copy
+    for key in confp.options('altsrc'):
+        if key in CONFIG_INT_OPTS:
+            config[key] = confp.getint('altsrc', key)
+        elif key in CONFIG_BOOL_OPTS:
+            config[key] = confp.getboolean('altsrc', key)
         else:
-            config[key] = cp.get('altsrc', key)
+            config[key] = confp.get('altsrc', key)
 
     #sanity checks
     if not os.path.isdir(config['stagedir']):
@@ -143,6 +143,7 @@ class BaseProcessor(object):
         self.options = options
         self.logger = logging.getLogger("altsrc")
         self.error_log = None
+        self.checkout = None
 
         self.mmd = None
         self.mmd_parsed = None
@@ -193,15 +194,15 @@ class BaseProcessor(object):
     def setup_logfile(self, logname):
         if not os.path.isdir(self.workdir):
             raise SanityError, "Work dir does not exist: %s" % self.workdir
-        fn = fn_ = os.path.join(self.workdir, logname)
-        n = 0
-        while os.path.exists(fn):
+        fname = fname_ = os.path.join(self.workdir, logname)
+        ntimes = 0
+        while os.path.exists(fname):
             # don't overwrite an old logfile
-            n += 1
-            if n > 1024:
+            ntimes += 1
+            if ntimes > 1024:
                 raise SanityError, "Too many log backups"
-            fn = "%s.%d" % (fn_, n)
-        self.logfile = file(fn, 'w')
+            fname = "%s.%d" % (fname_, ntimes)
+        self.logfile = file(fname, 'w')
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(self.options.file_log_level)
@@ -249,7 +250,7 @@ class BaseProcessor(object):
             if fatal:
                 raise CommandError, "command failed: %r" % cmd
             #otherwise
-            self.logger.warn("Command failed: %r" % cmd)
+            self.logger.warn("Command failed: %r", cmd)
         return ret
 
     def get_output(self, cmd, fatal=True, **kwargs):
@@ -269,12 +270,12 @@ class BaseProcessor(object):
         proc = subprocess.Popen(cmd, **kwargs)
         output = proc.communicate()[0]
         self.logger.debug("Command output was:\n%s", output)
-        rv = proc.wait()
-        if rv:
-            self.logger.warn("Command failed: %r" % cmd)
+        retval = proc.wait()
+        if retval:
+            self.logger.warn("Command failed: %r", cmd)
             if fatal:
                 raise CommandError, "command failed: %r" % cmd
-        return output, rv
+        return output, retval
 
     def _get_koji_session_and_pathinfo(self):
         session = koji.ClientSession(self.options.config['koji_hub'], {'anon_retry': True})
@@ -313,11 +314,11 @@ class BaseProcessor(object):
     def read_mmd(self):
         self.mmd_parsed = yaml.load(self.mmd)
         module_data = self.mmd_parsed['data']
-        f = open(self.source_file)
+        fobj = open(self.source_file)
         try:
-            self.src_mmd_parsed = yaml.load(f)
+            self.src_mmd_parsed = yaml.load(fobj)
         finally:
-            f.close()
+            fobj.close()
 
         name = module_data['name']
         version = module_data['stream']
@@ -330,11 +331,11 @@ class BaseProcessor(object):
 
     def read_srpm(self):
         self.logger.info('Reading source rpm: %s', self.source_file)
-        h = koji.get_rpm_header(self.source_file)
-        self.headers = h
-        if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
+        headers = koji.get_rpm_header(self.source_file)
+        self.headers = headers
+        if headers[rpm.RPMTAG_SOURCEPACKAGE] != 1:
             raise InputError, "%s is not a source package" % self.source_file
-        data = koji.get_header_fields(h, ['name','version','release','summary'])
+        data = koji.get_header_fields(headers, ['name', 'version', 'release', 'summary'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
         self.version = data['version']
@@ -376,7 +377,7 @@ class BaseProcessor(object):
                 sys.exit(0)
 
     def git_push_url(self):
-        params = {'package': self.package }
+        params = {'package': self.package}
         if self.mmd:
             git_url = self.options.config['git_push_url_module'] % params
         else:
@@ -419,6 +420,7 @@ class BaseProcessor(object):
         # branch included in the path because debranding rules can depend on it
         return os.path.join(*parts)
 
+    # pylint: disable=unused-argument
     def find_spec(self, relative=False):
         """Locate specfile in checkout"""
         specdir = os.path.join(self.checkout, 'SPECS')
@@ -429,9 +431,9 @@ class BaseProcessor(object):
             return path
 
         #otherwise
-        for fn in os.listdir(specdir):
-            if fn.endswith('.spec'):
-                return os.path.join(specdir, fn)
+        for fname in os.listdir(specdir):
+            if fname.endswith('.spec'):
+                return os.path.join(specdir, fname)
 
         raise SanityError, 'No spec file in checkout: %s' % self.checkout
 
@@ -440,12 +442,12 @@ class BaseProcessor(object):
         # XXX Currently mostly useless if push_tags is disabled
         # TODO rework this for a non-tagging workflow
         tagname = self.get_import_tagname()
-        git_url =  self.git_fetch_url()
+        git_url = self.git_fetch_url()
         self.logger.debug("Checking remote %s for tag %s", git_url, tagname)
         self.logger.debug("Logfile is %r", self.logfile)
         cmd = ['git', 'ls-remote', git_url, "refs/tags/%s" % tagname]
-        output, rv = self.get_output(cmd, stderr='null', fatal=False)
-        if rv:
+        output, retval = self.get_output(cmd, stderr='null', fatal=False)
+        if retval:
             # ignore for now. either repo is missing (ok) or network/server broken (we'll die later)
             self.logger.warning("Unable to check remote repo: %s", git_url)
             return False
@@ -453,13 +455,14 @@ class BaseProcessor(object):
             self.logger.warning("Tag %s already present on remote", tagname)
             return True
             #TODO further verification
+        return False
 
     def get_state(self):
         if not self.workdir:
             return None
         statefile = os.path.join(self.workdir, 'state')
         try:
-            fo = open(statefile, 'r')
+            fobj = open(statefile, 'r')
         except IOError:
             _, err = sys.exc_info()[:2]
             if err.errno == errno.ENOENT:
@@ -468,11 +471,11 @@ class BaseProcessor(object):
             raise
         self.logger.debug('Reading state file: %s', statefile)
         try:
-            fcntl.lockf(fo.fileno(), fcntl.LOCK_SH)
-            state = fo.read()
+            fcntl.lockf(fobj.fileno(), fcntl.LOCK_SH)
+            state = fobj.read()
             self.logger.debug('Read state: %s', state)
         finally:
-            fo.close()
+            fobj.close()
         return state.strip()
 
     def set_state(self, state):
@@ -480,12 +483,12 @@ class BaseProcessor(object):
             raise SanityError, "No workdir to set state for"
         statefile = os.path.join(self.workdir, 'state')
         self.logger.debug('Writing state %s to file %s', state, statefile)
-        fo = open(statefile, 'w')
+        fobj = open(statefile, 'w')
         try:
-            fcntl.lockf(fo.fileno(), fcntl.LOCK_EX)
-            fo.write(state)
+            fcntl.lockf(fobj.fileno(), fcntl.LOCK_EX)
+            fobj.write(state)
         finally:
-            fo.close()
+            fobj.close()
         return state
 
     def set_in_progress(self):
@@ -519,12 +522,12 @@ class BaseProcessor(object):
         parts = []
         ofs = 0
         for match in prog.finditer(ref):
-            a, b = match.span()
-            parts.append(ref[ofs:a])
-            p2 = ref[a:b]
-            p2 = ''.join(['%%%2x' % ord(c) for c in p2])
-            parts.append(p2)
-            ofs = b
+            index_a, index_b = match.span()
+            parts.append(ref[ofs:index_a])
+            part2 = ref[index_a:index_b]
+            part2 = ''.join(['%%%2x' % ord(c) for c in part2])
+            parts.append(part2)
+            ofs = index_b
         parts.append(ref[ofs:]) #tail
         ref = ''.join(parts)
         # deal with multichar patterns
@@ -562,7 +565,7 @@ class BaseProcessor(object):
         if extra_headers:
             headers.extend(extra_headers)
 
-        head = "\n".join(["%s: %s" % (k,v) for k,v in headers])
+        head = "\n".join(["%s: %s" % (k, v) for k, v in headers])
         message = "%s\n\n%s" % (head, body)
         message.replace('\n', '\r\n')
         message = koji.fixEncoding(message)
@@ -593,19 +596,17 @@ class BaseProcessor(object):
 
     def handle_error(self):
         """Handle an exception. Called from top level."""
-        tb = ''.join(traceback.format_exception(*sys.exc_info()))
+        tback = ''.join(traceback.format_exception(*sys.exc_info()))
         self.logger.exception('Staging failed')
-        cls, err = sys.exc_info()[:2]
-        msg = ''.join(traceback.format_exception_only(cls, err))
         self.logger.warning("Sending error email")
         nvr = self.nvr or "UNKNOWN"
         subject = 'Error staging %s' % nvr
         body = """\
 Staging failed for %(nvr)s.
 
-%(tb)s
+%(tback)s
 """
-        body = body % locals()
+        body = body % {"tback":tback, "nvr":nvr}
         #TODO : be more informative
         if self.error_log:
             error_messages = self.error_log.getvalue()
@@ -631,6 +632,10 @@ class Stager(BaseProcessor):
         "mmd"
     ]
 
+    def __init__(self, options):
+        self.branchname = None
+        super(Stager, self).__init__(options)
+
     def run(self):
         self.add_error_logger()
         self.read_source_file()
@@ -643,6 +648,7 @@ class Stager(BaseProcessor):
         self.setup_logfile('stage.log')
         self.sync_repo()
         self.setup_checkout()
+        #pylint: disable=broad-except
         try:
             self.import_sources()
         except UntaggedDuplicate:
@@ -667,22 +673,22 @@ class Stager(BaseProcessor):
             # TODO - more sanity checks
             self.set_in_progress()
             if self.options.restage:
-                self.logger.warn("Overwriting existing workdir: %s",  dirname)
+                self.logger.warn("Overwriting existing workdir: %s", dirname)
                 # TODO - back up first
                 koji.util.rmtree(dirname)
             else:
                 state = self.get_state()
                 if state == 'STAGED':
-                    self.logger.warn("Already successfully staged: %s",  dirname)
+                    self.logger.warn("Already successfully staged: %s", dirname)
                     self.logger.info("Checkout to desired branch: %s", self.options.branch)
                     self.do_checkout()
                     return state
                 elif state == 'PUSHED':
-                    self.logger.warn("Already successfully pushed: %s",  dirname)
+                    self.logger.warn("Already successfully pushed: %s", dirname)
                     return state
                 else:
                     self.logger.warn("Incomplete staging dir %s (state=%s), \
-will overwrite." % (dirname, state))
+will overwrite.", dirname, state)
                     koji.util.rmtree(dirname)
         elif os.path.exists(dirname):
             raise SanityError, "%s exists and is not a directory" % dirname
@@ -703,7 +709,7 @@ will overwrite." % (dirname, state))
 
         # if our local copy exists, we assume that remote does as well
 
-        git_url =  self.git_fetch_url()
+        git_url = self.git_fetch_url()
         self.logger.info('Syncing primary repo: %s', repo)
         cmd = ['git', 'fetch', '-v', git_url, '+refs/*:refs/*']
         try:
@@ -718,11 +724,11 @@ will overwrite." % (dirname, state))
     def init_repo(self):
         """Initialize a new repo"""
         # check if repo exists on remote
-        git_url =  self.git_fetch_url()
+        git_url = self.git_fetch_url()
         self.logger.info("Checking if remote repo exists: %s", git_url)
         cmd = ['git', 'ls-remote', git_url, "refs/heads/master"]
-        output, rv = self.get_output(cmd, fatal=False)
-        if rv:
+        _, retval = self.get_output(cmd, fatal=False)
+        if retval:
             # error talking to remote
             # for now, we assume this means the remote does not exist
             #TODO distinguish this from other errors (e.g. network)
@@ -758,15 +764,15 @@ will overwrite." % (dirname, state))
         cmd = ['git', 'init']
         self.log_cmd(cmd, cwd=initdir)
         readme = os.path.join(initdir, 'README.md')
-        fo = open(readme, 'w')
+        fobj = open(readme, 'w')
         # XXX this text need to live elsewhere
-        fo.write('''\
+        fobj.write('''\
 The master branch has no content
 
 Look at the c7 branch if you are working with CentOS-7, or the c4/c5/c6 branch for CentOS-4, 5 or 6
 If you find this file in a distro specific branch, it means that no content has been checked in yet
 ''')
-        fo.close()
+        fobj.close()
         cmd = ['git', 'add', 'README.md']
         self.log_cmd(cmd, cwd=initdir)
         cmd = self.git_base_cmd()
@@ -781,21 +787,21 @@ If you find this file in a distro specific branch, it means that no content has 
         cmd = ['git', 'clone', '--bare', initdir, "repo_init.git"]
         self.log_cmd(cmd, cwd=self.workdir)
         descfile = os.path.join(self.workdir, "repo_init.git", "description")
-        fo = file(descfile, 'w')
-        fo.write(self.summary)
-        fo.write('\n')
-        fo.close()
+        fobj = file(descfile, 'w')
+        fobj.write(self.summary)
+        fobj.write('\n')
+        fobj.close()
         if not self.check_push_to_pagure():
             # add gitblit options to git config
             # XXX this content should not be hard coded
             git_config = os.path.join(self.workdir, "repo_init.git", "config")
-            fo = file(git_config, 'a')
+            fobj = file(git_config, 'a')
             params = {
                 'summary' : self.summary,
                 'package' : self.package,
                 # anything else?
             }
-            fo.write(self.gitblit_config_format % params)
+            fobj.write(self.gitblit_config_format % params)
 
     def setup_checkout(self):
         """Setup our working checkout"""
@@ -824,12 +830,12 @@ If you find this file in a distro specific branch, it means that no content has 
             base = 'refs/remotes/origin/%s' % self.options.branch
             self.logger.info('Setting up staging branch: %s', branchname)
             cmd = ['git', 'show-ref', '--verify', base]
-            rv = self.log_cmd(cmd, cwd=dst, fatal=False)
-            if rv:
+            retval = self.log_cmd(cmd, cwd=dst, fatal=False)
+            if retval:
                 self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
                 cmd = ['git', 'checkout', '--orphan', branchname]
-                rv = self.log_cmd(cmd, cwd=dst, fatal=False)
-                if rv:
+                retval = self.log_cmd(cmd, cwd=dst, fatal=False)
+                if retval:
                     # empty HEAD maybe, creating and pointing to master
                     cmd = self.git_base_cmd()
                     cmd.extend(['commit', '--allow-empty', '-m', 'init_branch'])
@@ -875,15 +881,15 @@ If you find this file in a distro specific branch, it means that no content has 
             return False
         if ext in self.UPLOAD_EXTS:
             return True
-        st = os.stat(path)
-        if st.st_size < 1024:
+        fstat = os.stat(path)
+        if fstat.st_size < 1024:
             # the UPLOAD_EXTS check should catch most of what we want in
             # the lookaside, so we'll just include anything small
             return False
         #lastly, see what the file utility says
         cmd = ['file', '--brief', path]
-        output, rv = self.get_output(cmd, stderr='keep', fatal=False)
-        if rv:
+        output, retval = self.get_output(cmd, stderr='keep', fatal=False)
+        if retval:
             #nonfatal
             return False
         self.logger.debug("Source file %s: %s", path, output)
@@ -897,8 +903,8 @@ If you find this file in a distro specific branch, it means that no content has 
         # confirm that the directory is wiped, because in the duplicate check
         # below, we want to be sure that the duplicate content really came
         # from our exploded srpm
-        for fn in os.listdir(dst):
-            if fn != '.git':
+        for fname in os.listdir(dst):
+            if fname != '.git':
                 raise SanityError('Failed to clear checkout')
         sourcedir = os.path.join(dst, 'SOURCES/')
         if self.mmd:
@@ -912,25 +918,25 @@ If you find this file in a distro specific branch, it means that no content has 
 
         #figure out which sources go to the lookaside
         to_move = []
-        for fn in os.listdir(sourcedir):
-            path = os.path.join(sourcedir, fn)
+        for fname in os.listdir(sourcedir):
+            path = os.path.join(sourcedir, fname)
             if self.for_lookaside(path):
-                to_move.append(fn)
+                to_move.append(fname)
         to_move.sort()
 
         # move files to lookaside
         meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
         gitignore = file(os.path.join(dst, ".gitignore"), 'w')
-        for fn in to_move:
-            path = os.path.join(sourcedir, fn)
+        for fname in to_move:
+            path = os.path.join(sourcedir, fname)
             digest = self.get_digest(path)
             self.copy_to_lookaside(path, digest)
             if not self.options.keep_sources:
                 os.unlink(path)
             # write metadata file
-            meta.write("%s SOURCES/%s\n" % (digest, fn))
+            meta.write("%s SOURCES/%s\n" % (digest, fname))
             # write .gitignore
-            gitignore.write('SOURCES/%s\n' % fn)
+            gitignore.write('SOURCES/%s\n' % fname)
         meta.close()
         gitignore.close()
 
@@ -939,11 +945,11 @@ If you find this file in a distro specific branch, it means that no content has 
 
         # see if we have anything to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
-        output, rv = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
+        output, _ = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
         if not output:
             # This means our exploded srpm matched the last commit exactly
             cmd = self.git_base_cmd() + ['show', '-s', '--format=%h %s']
-            output, rv = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
+            output, _ = self.get_output(cmd, cwd=dst, stderr='keep', fatal=False)
             self.logger.warning('Source matches last commit: %s', output)
             raise UntaggedDuplicate
 
@@ -966,12 +972,12 @@ If you find this file in a distro specific branch, it means that no content has 
         """Calculate hex digest for file"""
 
         csum = hashlib.sha1()
-        fo = file(path, 'rb')
+        fobj = file(path, 'rb')
         chunk = 'IGNORE ME!'
         while chunk:
-            chunk = fo.read(8192)
+            chunk = fobj.read(8192)
             csum.update(chunk)
-        fo.close()
+        fobj.close()
         return csum.hexdigest()
 
     def copy_to_lookaside(self, path, digest):
@@ -1001,18 +1007,18 @@ If you find this file in a distro specific branch, it means that no content has 
         if not self.options.config['debrand']:
             self.logger.warning("Debranding is disabled")
             return
-        cp = ConfigParser.RawConfigParser()
+        confp = ConfigParser.RawConfigParser()
         for name in 'altsrc-global', self.package:
             cfile = os.path.join(self.options.config['rulesdir'], name + '.cfg')
             self.logger.debug('Looking for rules in %s', cfile)
             if not os.access(cfile, os.F_OK):
                 continue
             self.logger.info('Loading rules from %s', cfile)
-            cp.read(cfile)
+            confp.read(cfile)
 
         # order rules
         rules = []
-        for section in cp.sections():
+        for section in confp.sections():
             parts = section.split(None, 1)
             if len(parts) < 2:
                 continue
@@ -1030,12 +1036,12 @@ If you find this file in a distro specific branch, it means that no content has 
             return
 
         # apply rules
-        changelog_notes=[]
+        changelog_notes = []
         for key, rtype, section in rules:
             handler = 'rule_handler_%s' % rtype
             if not hasattr(self, handler):
                 raise ConfigError, "No handler for rule type %s" % rtype
-            data = dict(cp.items(section))
+            data = dict(confp.items(section))
             if 'enabled' in data:
                 enabled = data['enabled'].lower().strip()
                 if enabled in ('no', 'false', '0'):
@@ -1063,6 +1069,7 @@ If you find this file in a distro specific branch, it means that no content has 
             can_fail = False
             if data.get('can_fail', '').lower() in ('yes', 'y', '1', 'true'):
                 can_fail = True
+            #pylint: disable=broad-except
             try:
                 getattr(self, handler)(data)
                 # TODO - check result
@@ -1077,25 +1084,25 @@ If you find this file in a distro specific branch, it means that no content has 
 
         #see if any new sources need to go to the lookaside
         cmd = ['git', 'ls-files', '--exclude-standard', '--others']
-        output, rv = self.get_output(cmd, cwd=self.checkout)
+        output, _ = self.get_output(cmd, cwd=self.checkout)
         for_lookaside = []
         if output:
             self.logger.info('New files added:\n%s', output)
-            for fn in output.splitlines():
-                path = os.path.join(self.checkout, fn)
+            for fname in output.splitlines():
+                path = os.path.join(self.checkout, fname)
                 if self.for_lookaside(path):
-                    for_lookaside.append(fn)
+                    for_lookaside.append(fname)
         if for_lookaside:
             meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'a')
             gitignore = file(os.path.join(self.checkout, ".gitignore"), 'a')
-            for fn in for_lookaside:
-                path = os.path.join(self.checkout, fn)
+            for fname in for_lookaside:
+                path = os.path.join(self.checkout, fname)
                 digest = self.get_digest(path)
                 self.copy_to_lookaside(path, digest)
                 if not self.options.keep_sources:
                     os.unlink(path)
-                meta.write("%s %s\n" % (digest, fn))
-                gitignore.write('%s\n' % fn)
+                meta.write("%s %s\n" % (digest, fname))
+                gitignore.write('%s\n' % fname)
             meta.close()
             gitignore.close()
 
@@ -1110,7 +1117,7 @@ If you find this file in a distro specific branch, it means that no content has 
 
         # check that we actually have something to commit
         cmd = ['git', 'diff', '--cached', '--name-only']
-        output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
+        output, _ = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
         if not output:
             raise SanityError, "Debranding rules made no changes"
             # caller will clean up
@@ -1134,13 +1141,13 @@ If you find this file in a distro specific branch, it means that no content has 
         self.log_cmd(cmd, cwd=self.checkout)
 
         self.logger.warning("Adding debranding failure notice")
-        fn = os.path.join(self.checkout, "README.debrand")
-        fo = file(fn, 'w')
-        fo.write('''\
+        fname = os.path.join(self.checkout, "README.debrand")
+        fobj = file(fname, 'w')
+        fobj.write('''\
 Warning: This package was configured for automatic debranding, but the changes
 failed to apply.
 ''')
-        fo.close()
+        fobj.close()
         cmd = ['git', 'add', 'README.debrand']
         self.log_cmd(cmd, cwd=self.checkout)
         #and commit
@@ -1161,7 +1168,7 @@ failed to apply.
         if not notes:
             parts.append('- Apply debranding changes\n')
         for note in notes:
-            lineno=0
+            lineno = 0
             for line in note.splitlines():
                 line = line.strip()
                 if line:
@@ -1170,22 +1177,22 @@ failed to apply.
                         parts.append('- %s\n' % line)
                     else:
                         parts.append('-  %s\n' % line)
-        fo = file(os.path.join(self.workdir, 'changelog.txt'), 'w')
+        fobj = file(os.path.join(self.workdir, 'changelog.txt'), 'w')
         for part in parts:
-            fo.write(part)
+            fobj.write(part)
             self.logger.debug("%s", part)
-        fo.close()
+        fobj.close()
 
     def get_modded_verrel(self):
         spec = self.find_spec()
         macros = self.get_mod_macros()
         cmd = ['rpm', '-q', '--specfile', spec,
                 '--define', '_topdir %s' % self.checkout]
-        for m in macros:
-            cmd.extend(['--define', '%s %s' % (m, macros[m])])
+        for macro in macros:
+            cmd.extend(['--define', '%s %s' % (macro, macros[macro])])
         cmd.extend([
                '--qf', '%{v}-%{r}\\n'])
-        output, rv = self.get_output(cmd, cwd=self.checkout)
+        output, _ = self.get_output(cmd, cwd=self.checkout)
         verrel = output.splitlines()[0]
         return verrel
 
@@ -1195,18 +1202,18 @@ failed to apply.
     def get_mod_macros(self):
         # try to determine from branch name
         prog = re.compile(self.branch_re)
-        m = prog.match(self.options.branch)
-        if m:
-            rhel = m.group(1)
+        macro = prog.match(self.options.branch)
+        if macro:
+            rhel = macro.group(1)
             return {
                 'dist' : ".el%s.centos" % rhel,
                 'rhel' : rhel,
             }
         # try to determine from dist tag
         prog = re.compile(self.dist_re)
-        m = prog.search(self.release)
-        if m:
-            rhel = m.group(1)
+        macro = prog.search(self.release)
+        if macro:
+            rhel = macro.group(1)
             return {
                 'dist' : ".el%s.centos" % rhel,
                 'rhel' : rhel,
@@ -1244,20 +1251,20 @@ failed to apply.
         if data.get('mode') == 'line':
             self.handle_re_line(data)
         if 'file' in data:
-            fn = os.path.join(self.checkout, data['file'])
+            fname = os.path.join(self.checkout, data['file'])
         else:
-            fn = self.find_spec()
-        fo = file(fn, 'r')
-        text = fo.read()
-        fo.close()
+            fname = self.find_spec()
+        fobj = file(fname, 'r')
+        text = fobj.read()
+        fobj.close()
         count = int(data.get('count', '0'))
         if count:
             text = re.sub(data['match'], data['replace'], text, count)
         else:
             text = re.sub(data['match'], data['replace'], text)
-        fo = file(fn, 'w')
-        fo.write(text)
-        fo.close()
+        fobj = file(fname, 'w')
+        fobj.write(text)
+        fobj.close()
 
     def rule_handler_mmd(self, data):
         src_mmd_parsed_copy = copy.deepcopy(self.src_mmd_parsed)
@@ -1283,23 +1290,23 @@ failed to apply.
                                   data['replace'],
                                   current_data)
                 parent[parent_key] = replaced
-        f = open(os.path.join(self.checkout,
+        fobj = open(os.path.join(self.checkout,
                               "SOURCES",
                               os.path.basename(self.source_file)), "w")
         try:
-            yaml.dump(src_mmd_parsed_copy, f)
+            yaml.dump(src_mmd_parsed_copy, fobj)
         finally:
-            f.close()
+            fobj.close()
 
     def handle_re_line(self, data):
         if 'file' in data:
-            fn = os.path.join(self.checkout, data['file'])
+            fname = os.path.join(self.checkout, data['file'])
         else:
-            fn = self.find_spec()
-        self.logger.info('Applying regex substitutions to %s', fn)
-        fo = file(fn, 'r')
-        lines = fo.readlines()
-        fo.close()
+            fname = self.find_spec()
+        self.logger.info('Applying regex substitutions to %s', fname)
+        fobj = file(fname, 'r')
+        lines = fobj.readlines()
+        fobj.close()
         prog = re.compile(data['match'])
         count = int(data.get('count', '0'))
         # count is how many replacements to make, zero means unlimited
@@ -1309,11 +1316,11 @@ failed to apply.
                 remain = count - n_match
                 if remain <= 0:
                     break
-                line2, n = prog.subn(data['replace'], line, remain)
+                line2, total = prog.subn(data['replace'], line, remain)
             else:
-                line2, n = prog.subn(data['replace'], line)
-            n_match += n
-            if n > 0:
+                line2, total = prog.subn(data['replace'], line)
+            n_match += total
+            if total > 0:
                 self.logger.debug("Replacing line %i:\n-%s+%s", lineno, line, line2)
                 lines[lineno] = line2
         if n_match > 0:
@@ -1321,9 +1328,9 @@ failed to apply.
         else:
             self.logger.error('No matches for pattern %r', prog.pattern)
         # write it back out
-        fo = file(fn, 'w')
-        fo.writelines(lines)
-        fo.close()
+        fobj = file(fname, 'w')
+        fobj.writelines(lines)
+        fobj.close()
 
     def rule_handler_patch(self, data):
         """Add or remove a patch in the spec file"""
@@ -1344,9 +1351,9 @@ failed to apply.
         patchstrip = int(data.get('strip', '1'))
         self.logger.debug("Adding patch: %r", data)
         specfile = self.find_spec()
-        fo = file(specfile, 'r')
-        lines = fo.readlines()
-        fo.close()
+        fobj = file(specfile, 'r')
+        lines = fobj.readlines()
+        fobj.close()
         # find highest patch number and last patch line location
         patch_re = re.compile(r'^\s*([pP]atch)(\d*):(\s+)(\S+)\s*$')
         alt_re = re.compile(r'(?i)^\s*(?:name|version|release|source\d*):\s+')
@@ -1356,12 +1363,12 @@ failed to apply.
         patch_tag = 'Patch'
         patch_sep = '\t'
         for lineno, line in enumerate(lines):
-            m = patch_re.search(line)
-            if m:
+            match = patch_re.search(line)
+            if match:
                 lnum = lineno
-                patch_tag = m.group(1)
-                pnum = max(pnum, int(m.group(2) or "0"))
-                patch_sep = m.group(3)
+                patch_tag = match.group(1)
+                pnum = max(pnum, int(match.group(2) or "0"))
+                patch_sep = match.group(3)
                 # unnumbered patch equivalent to zero
                 # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if patchnum == pnum:
@@ -1436,9 +1443,9 @@ failed to apply.
                 raise SanityError, "Unable to apply patch %s" % patchname
 
         # write it back out
-        fo = file(specfile, 'w')
-        fo.writelines(lines)
-        fo.close()
+        fobj = file(specfile, 'w')
+        fobj.writelines(lines)
+        fobj.close()
 
     def copy_new_source(self, path):
         """Copy a new source file into checkout source dir"""
@@ -1466,22 +1473,24 @@ failed to apply.
             raise SanityError, 'Invalid rule'
 
         specfile = self.find_spec()
-        fo = file(specfile, 'r')
-        lines = fo.readlines()
-        fo.close()
+        fobj = file(specfile, 'r')
+        lines = fobj.readlines()
+        fobj.close()
 
         # find PatchNN line
+        lineno = None
         for lineno, line in enumerate(lines):
-            m = patch_re.search(line)
-            if m:
-                patchnum = m.group(1)
-                patchname = m.group(2)
+            match = patch_re.search(line)
+            if match:
+                patchnum = match.group(1)
+                patchname = match.group(2)
                 break
         else:
             self.logger.error("No match for pattern: %r", patch_re.pattern)
             raise SanityError, "Could not find patch to remove"
         # remove the matching line
-        del lines[lineno]
+        if lineno:
+            del lines[lineno]
 
         # also remove the line that applies the patch
         apply_re = re.compile(r'^\s*%patch' + patchnum + r'(?:\D.*)?$')
@@ -1502,9 +1511,9 @@ failed to apply.
                 raise SanityError, "Unable to remove patch"
 
         # write it back out
-        fo = file(specfile, 'w')
-        fo.writelines(lines)
-        fo.close()
+        fobj = file(specfile, 'w')
+        fobj.writelines(lines)
+        fobj.close()
 
     def rule_handler_source(self, data):
         """Add a source to the specfile"""
@@ -1526,9 +1535,9 @@ failed to apply.
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
-        fo = file(specfile, 'r')
-        lines = fo.readlines()
-        fo.close()
+        fobj = file(specfile, 'r')
+        lines = fobj.readlines()
+        fobj.close()
 
         source_re = re.compile(r'^\s*[sS]ource(\d*):\s+(\S+)\s*$')
         name_re = re.compile(r'^\s*[nN]ame:\s+')
@@ -1536,10 +1545,10 @@ failed to apply.
         lnum = -1
         lname = -1
         for lineno, line in enumerate(lines):
-            m = source_re.search(line)
-            if m:
+            match = source_re.search(line)
+            if match:
                 lnum = lineno
-                snum = max(snum, int(m.group(1) or "0"))
+                snum = max(snum, int(match.group(1) or "0"))
                 # unnumbered source equivalent to zero
                 # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if sourcenum == snum:
@@ -1564,9 +1573,9 @@ failed to apply.
         self.copy_new_source(sourcefile)
 
         # write it back out
-        fo = file(specfile, 'w')
-        fo.writelines(lines)
-        fo.close()
+        fobj = file(specfile, 'w')
+        fobj.writelines(lines)
+        fobj.close()
 
     def handle_replace_source(self, data):
         """Replace a source entry in spec file"""
@@ -1574,23 +1583,23 @@ failed to apply.
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
-        fo = file(specfile, 'r')
-        lines = fo.readlines()
-        fo.close()
+        fobj = file(specfile, 'r')
+        lines = fobj.readlines()
+        fobj.close()
 
         # find the original source entry
         if 'num' in data:
             num = int(data['num'])
-            source_re = re.compile(r'^(\s*[sS]ource' + str(num) + ':\s+)(\S+)\s*$')
+            source_re = re.compile(r'^(\s*[sS]ource' + str(num) + r':\s+)(\S+)\s*$')
         elif 'name' in data:
             name = data['name']
             source_re = re.compile(r'^(\s*[sS]ource\d*:\s+)(' + name + r')\s*$')
         lnum = -1
         for lineno, line in enumerate(lines):
-            m = source_re.search(line)
-            if m:
+            match = source_re.search(line)
+            if match:
                 lnum = lineno
-                head = m.group(1)
+                head = match.group(1)
                 break
         else:
             self.logger.error('Could not find source, no match for %r', source_re.pattern)
@@ -1605,14 +1614,14 @@ failed to apply.
         #TODO - option to remove old
 
         # write it back out
-        fo = file(specfile, 'w')
-        fo.writelines(lines)
-        fo.close()
+        fobj = file(specfile, 'w')
+        fobj.writelines(lines)
+        fobj.close()
 
     def rule_handler_script(self, data):
         """Run an arbitary script"""
-        fn = data['script']
-        script = os.path.join(self.options.config['rulesdir'], fn)
+        fname = data['script']
+        script = os.path.join(self.options.config['rulesdir'], fname)
         if not os.path.isfile(script):
             raise ConfigError, 'Script missing: %s' % script
 
@@ -1687,8 +1696,8 @@ class Pusher(BaseProcessor):
     def add_changelog(self):
         """Check for a prepared changelog entry and add to spec if found"""
 
-        fn = os.path.join(self.workdir, 'changelog.txt')
-        if not os.path.exists(fn):
+        fname = os.path.join(self.workdir, 'changelog.txt')
+        if not os.path.exists(fname):
             self.logger.info("No prepared changelog found")
             return
 
@@ -1698,8 +1707,8 @@ class Pusher(BaseProcessor):
         self.log_cmd(['git', 'checkout', stage_branch], cwd=self.checkout)
 
         # get the changelog entry
-        fo = file(fn, 'r')
-        clog = fo.read()
+        fobj = file(fname, 'r')
+        clog = fobj.read()
         now = datetime.datetime.now().strftime('%a %b %d %Y')
         if clog.find('INSERT_DATE_HERE') == -1:
             self.logger.error("Prepared changelog is malformed")
@@ -1728,7 +1737,7 @@ class Pusher(BaseProcessor):
         if len(parts) > 3:
             self.logger.error('Found multiple %changelog macros in spec')
             # keep going
-            self.logger.debug('Context:\n%s%s', parts)
+            self.logger.debug('Context:\n%s', parts)
         outf.close()
 
         # add commit
@@ -1741,7 +1750,7 @@ class Pusher(BaseProcessor):
     def push_git(self, state):
         """Get our checkout ready for the public push"""
 
-        git_url =  self.git_push_url()
+        git_url = self.git_push_url()
         pushbranch = "altsrc-push-%s" % self.options.branch
         pushbranch = self.sanitize_ref_segment(pushbranch)
 
@@ -1750,8 +1759,8 @@ class Pusher(BaseProcessor):
             # fetch from public remote
             # see if remote has it
             cmd = ['git', 'ls-remote', git_url, "refs/heads/%s" % self.options.branch]
-            output, rv = self.get_output(cmd, cwd=self.checkout, fatal=False)
-            if rv:
+            output, retval = self.get_output(cmd, cwd=self.checkout, fatal=False)
+            if retval:
                 # error talking to remote. Could be that that repo does not exist,
                 # or could be a network error
                 self.logger.warning("Unable to reach remote repo: %s", self.package)
@@ -1773,9 +1782,9 @@ class Pusher(BaseProcessor):
             our_import_tag = self.sanitize_ref_segment(our_import_tag)
             stage_branch = "altsrc-stage-%s" % self.options.branch
             stage_branch = self.sanitize_ref_segment(stage_branch)
-            output, rv = self.get_output(['git', 'rev-parse', our_import_tag], cwd=self.checkout, fatal=True)
+            output, _ = self.get_output(['git', 'rev-parse', our_import_tag], cwd=self.checkout, fatal=True)
             import_rev = output.strip()
-            output, rv = self.get_output(['git', 'rev-parse', stage_branch], cwd=self.checkout, fatal=True)
+            output, _ = self.get_output(['git', 'rev-parse', stage_branch], cwd=self.checkout, fatal=True)
             stage_rev = output.strip()
             #TODO assert that stage_branch is a descendant of our_import_tag
             if new_branch:
@@ -1795,7 +1804,7 @@ class Pusher(BaseProcessor):
             self.log_cmd(cmd, cwd=self.checkout)
             # check that we actually have something to commit
             cmd = ['git', 'diff', '--cached', '--name-only']
-            output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
+            output, _ = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
 
             if output:
                 cmd = self.git_base_cmd()
@@ -1821,7 +1830,7 @@ class Pusher(BaseProcessor):
                 self.log_cmd(cmd, cwd=self.checkout)
                 # check that we actually have something to commit
                 cmd = ['git', 'diff', '--cached', '--name-only']
-                output, rv = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
+                output, _ = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
                 if not output:
                     raise SanityError, "Debranding commits resulted in no changes?"
                 #commit
@@ -1889,7 +1898,7 @@ class Pusher(BaseProcessor):
         meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
         for line in meta.readlines():
             line = line.strip()
-            digest, fn = line.split(None, 1)
+            digest, _ = line.split(None, 1)
             self.push_lookaside_file(digest)
 
     def push_lookaside_file(self, digest):
@@ -1933,8 +1942,8 @@ def acquire_lock(lock_file_path, wait_time, sleep_interval, logger):
 
 def explode_srpm(srpm, destdir=None, logfile=None):
     # explode our srpm to the given directory
-    h = koji.get_rpm_header(srpm)
-    if h[rpm.RPMTAG_SOURCEPACKAGE] != 1:
+    header = koji.get_rpm_header(srpm)
+    if header[rpm.RPMTAG_SOURCEPACKAGE] != 1:
         # we checked this earlier, but since we're about to rpm -i it,
         # let's check again
         raise SanityError, "%s is not a source package" % srpm
@@ -1956,10 +1965,10 @@ def explode_srpm(srpm, destdir=None, logfile=None):
 
 
 def wipe_git_dir(dirname):
-    for fn in os.listdir(dirname):
-        if fn == '.git':
+    for fname in os.listdir(dirname):
+        if fname == '.git':
             continue
-        path = os.path.join(dirname, fn)
+        path = os.path.join(dirname, fname)
         if os.path.isdir(path):
             koji.util.rmtree(path)
         else:
@@ -2003,6 +2012,8 @@ def setup_logging(options):
         handler.setFormatter(logging.Formatter(options.config['log_format']))
         handler.setLevel(file_log_level)
         logger.addHandler(handler)
+        #XXX: fix handlers
+        #pylint:disable=undefined-variable
         handlers.append(handler)
     # TODO - setup koji's logger?
 
@@ -2019,6 +2030,7 @@ def _(args):
 def main(args):
     """process options from command line"""
 
+    #pylint:disable=used-before-assignment
     usage = _("%prog [options] branch source\n"
               "source can be <nvr>.src.rpm or <nvr>:modulemd.src.txt only when used with --koji,\n"
               "without --koji srpm as source is supported only, <nvr>[.src.rpm] is accepted then.")
@@ -2056,14 +2068,15 @@ def main(args):
     if options.push:
         tasks.append(Pusher(options))
     for task in tasks:
+        #pylint: disable=broad-except
         try:
             task.run()
             task.notify_errors()
-        except SystemExit, exc:
+        except SystemExit:
             msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
             logger.warn("Exiting (%s)", msg)
             raise
-        except KeyboardInterrupt, e:
+        except KeyboardInterrupt:
             msg = ''.join(traceback.format_exception_only(*sys.exc_info()[:2]))
             logger.warn("Exiting (%s)", msg)
             sys.exit(1)
