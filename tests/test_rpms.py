@@ -19,7 +19,7 @@ from .matchers import exits
 if sys.version_info < (3, 0):
     from .test_import.alt_src import (main, BaseProcessor, acquire_lock,
                                       StartupError, SanityError, InputError,
-                                      config_defaults, Stager, CommandError)
+                                      CONFIG_DEFAULTS, Stager, CommandError)
 
 xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
 
@@ -833,7 +833,7 @@ def test_git_url_module(mock_koji_session, mock_koji_pathinfo):
     binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
     mock_koji_session.return_value.getBuild.return_value = binfo
 
-    mock_options = MagicMock(koji=True, source="build_nvr:modulemd.src.txt", config=config_defaults)
+    mock_options = MagicMock(koji=True, source="build_nvr:modulemd.src.txt", config=CONFIG_DEFAULTS)
     with patch('os.path.isfile', return_value=True):
         processor = BaseProcessor(mock_options)
         processor.source_file = os.path.join(MODULES_PATH, "modulemd.src.txt")
@@ -907,8 +907,8 @@ def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
         os.path.join(RPMS_PATH, rpm)
     ]
 
-    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
-    config_defaults['pagure_api_key_file'] = key_file
+    CONFIG_DEFAULTS['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    CONFIG_DEFAULTS['pagure_api_key_file'] = key_file
 
     def side_eff():
         # create dummy remote repo to succeed git calls
@@ -916,7 +916,7 @@ def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
         check_call(cmd, cwd=pushdir)
         return '{"message": "Project \\"rpms/grub2\\" created"}'
 
-    with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+    with patch.dict("tests.test_import.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
         with patch("tests.test_import.alt_src.urlopen") as mock_resp:
             mock_resp.return_value.read.side_effect = side_eff
             # call main to push
@@ -954,8 +954,8 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
     mock_koji_session.return_value.getBuild.return_value = binfo
     mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
 
-    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
-    config_defaults['pagure_api_key_file'] = key_file
+    CONFIG_DEFAULTS['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    CONFIG_DEFAULTS['pagure_api_key_file'] = key_file
 
     def side_eff():
         # create dummy remote repo to succeed git calls
@@ -963,7 +963,7 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
         check_call(cmd, cwd=pushdir)
         return '{"message": "Project \\"modules/%s\\" created"}' % mmd_dict['name']
 
-    with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+    with patch.dict("tests.test_import.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
         with patch("tests.test_import.alt_src.urlopen") as mock_resp:
             mock_resp.return_value.read.side_effect = side_eff
             # call main to push
@@ -1003,8 +1003,8 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
     mock_koji_session.return_value.getBuild.return_value = binfo
     mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
 
-    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
-    config_defaults['pagure_api_key_file'] = key_file
+    CONFIG_DEFAULTS['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    CONFIG_DEFAULTS['pagure_api_key_file'] = key_file
 
     def side_eff():
         # create dummy remote repo to succeed git calls
@@ -1020,7 +1020,7 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
     )
     with patch("os.path.exists") as mocked_exists:
         mocked_exists.side_effect = exists_original
-        with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+        with patch.dict("tests.test_import.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
             with patch("tests.test_import.alt_src.urlopen") as mock_resp:
                 mock_resp.return_value.read.side_effect = side_eff
                 main(options)
@@ -1084,8 +1084,8 @@ def test_push_remote_exists(patched_isfile, patched_push_git, patched_debrand,
     mock_koji_session.return_value.getBuild.return_value = binfo
     mock_koji_pathinfo.return_value.typedir.return_value = MODULES_PATH
 
-    config_defaults['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
-    config_defaults['pagure_api_key_file'] = key_file
+    CONFIG_DEFAULTS['pagure_repo_init_api'] = 'https://pagure_git_url/api/0/new'
+    CONFIG_DEFAULTS['pagure_api_key_file'] = key_file
 
     exists_original = os.path.exists
     repo_dir = os.path.join(
@@ -1095,7 +1095,7 @@ def test_push_remote_exists(patched_isfile, patched_push_git, patched_debrand,
     )
     with patch("os.path.exists") as mocked_exists:
         mocked_exists.side_effect = exists_original
-        with patch.dict("tests.test_import.alt_src.config_defaults", config_defaults):
+        with patch.dict("tests.test_import.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
             main(options)
             mocked_exists.assert_any_call(repo_dir)
 
