@@ -103,4 +103,3 @@ disable=print-statement,
         too-many-lines,
         too-many-locals,
         invalid-name
-
