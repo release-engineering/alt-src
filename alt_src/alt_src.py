@@ -30,6 +30,7 @@ import simplejson as json
 import koji
 import rpm
 
+__all__ = ["main", "entry_point"]
 
 CONFIG_DEFAULTS = {
     'stagedir': '/srv/cache/stage',
@@ -2091,5 +2092,3 @@ def main(args):
 
 def entry_point():
     main(sys.argv[1:])
-
-# the end
