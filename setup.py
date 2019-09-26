@@ -33,8 +33,4 @@ setup(
                   "alt-src = alt_src:entry_point",
             ],
       },
-      project_urls={
-            "Documentation": "https://release-engineering.github.io/alt-src/",
-            "Changelog": "https://github.com/release-engineering/alt-src/blob/master/CHANGELOG.md",
-      },
 )
