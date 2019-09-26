@@ -14,7 +14,7 @@ def get_requirements():
 
 setup(
       name="alt-src",
-      version="0.2.0",
+      version="1.0",
       packages=find_packages(exclude=["tests"]),
       url="https://github.com/release-engineering/alt-src",
       license="GNU General Public License",
