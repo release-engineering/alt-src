@@ -11,10 +11,4 @@ matrix:
       env: TOX_ENV=py36
     - python: "2.7"
       env: TOX_ENV=static
-    # alt-src not available on PyPI
-    #- python: "2.7"
-    #  env: TOX_ENV=pidiff
-    # alt-src docs not implemented
-    #- python: "2.7"
-    #  env: TOX_ENV=docs
 script: tox -e $TOX_ENV
