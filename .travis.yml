@@ -11,4 +11,8 @@ matrix:
       env: TOX_ENV=py36
     - python: "2.7"
       env: TOX_ENV=static
+    - python: "2.7"
+      env: TOX_ENV=cov
+    - python: "2.7"
+      env: TOX_ENV=cov-travis
 script: tox -e $TOX_ENV
