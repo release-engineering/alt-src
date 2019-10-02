@@ -7,11 +7,6 @@ def get_description():
     return "Tool for uploading custom patches to centos source rpm repositories"
 
 
-def get_requirements():
-    with open("requirements.txt", "r") as f:
-        return f.read().splitlines()
-
-
 setup(
       name="alt-src",
       version="1.0",
@@ -26,7 +21,13 @@ setup(
             "Programming Language :: Python :: 2.7",
             "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
       ],
-      install_requires=get_requirements(),
+      install_requires=[
+            "koji",
+            "rpm",
+            "requests",
+            "simplejson",
+            "PyYAML<5.1"
+      ],
       entry_points={
             "console_scripts": [
                   "alt-src = alt_src:entry_point",
