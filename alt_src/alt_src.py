@@ -30,6 +30,7 @@ import simplejson as json
 import koji
 import rpm
 
+__all__ = ["main", "entry_point"]
 
 CONFIG_DEFAULTS = {
     'stagedir': '/srv/cache/stage',
@@ -144,6 +145,7 @@ class BaseProcessor(object):
         self.logger = logging.getLogger("altsrc")
         self.error_log = None
         self.checkout = None
+        self.git_auth_set = False
 
         self.mmd = None
         self.mmd_parsed = None
@@ -397,11 +399,14 @@ class BaseProcessor(object):
         return git_url
 
     def git_base_cmd(self):
-        cmd = ['git',
-                '-c', 'user.name=%s' % self.options.config['git_name'],
-                '-c', 'user.email=%s' % self.options.config['git_email'],
-        ]
-        return cmd
+        if not self.git_auth_set:
+            name, email = self.options.config['git_name'], self.options.config['git_email']
+            os.environ['GIT_AUTHOR_NAME'] = name
+            os.environ['GIT_COMMITTER_NAME'] = name
+            os.environ['GIT_AUTHOR_EMAIL'] = email
+            os.environ['GIT_COMMITTER_EMAIL'] = email
+            self.git_auth_set = True
+        return ['git', ]
 
     def get_workdir(self):
         if not os.path.isdir(self.options.config['stagedir']):
@@ -2085,7 +2090,5 @@ def main(args):
             sys.exit(2)
 
 
-if __name__ == '__main__':
+def entry_point():
     main(sys.argv[1:])
-
-# the end
