@@ -1,5 +1,7 @@
 koji
 rpm
 requests
-PyYAML
 simplejson
+
+# Locked for Python 2.6 support
+PyYAML<5.1
