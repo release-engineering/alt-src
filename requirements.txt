@@ -1,0 +1,5 @@
+koji
+rpm
+requests
+PyYAML
+simplejson
