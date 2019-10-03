@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 from multiprocessing import Process
-from subprocess import PIPE, Popen, check_call, check_output
+from subprocess import PIPE, Popen, check_call
 import pytest
 import yaml
 from configparser import RawConfigParser
@@ -31,6 +31,13 @@ MODULES_PATH = os.path.join(TESTS_PATH, 'data', 'module_source')
 DEBRAND_XFAIL = [
     # list any RPMs where debrand is expected to fail here
 ]
+
+
+def check_output(cmd_list, cwd):
+    proc = Popen(cmd_list, cwd=cwd)
+    proc.wait()
+    if proc.stdout:
+        return proc.stdout.read()
 
 
 @pytest.fixture
