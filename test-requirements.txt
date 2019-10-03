@@ -4,6 +4,9 @@ koji
 configparser
 six > 1.10
 
-# Locked for python 2.6 support
+# Locked for python 2.7 support
 pytest-cov==2.5.1
-pytest<3.3
+pytest==3.9.1; python_version >= '2.7'
+
+# Locked for python 2.6 support
+pytest<3.3; python_version < '2.7'
