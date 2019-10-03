@@ -7,11 +7,6 @@ def get_description():
     return "Tool for uploading custom patches to centos source rpm repositories"
 
 
-def get_requirements():
-    with open("requirements.txt") as f:
-        return f.read().splitlines()
-
-
 setup(
       name="alt-src",
       version="1.0",
