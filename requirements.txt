@@ -1,4 +1,0 @@
-koji
-rpm
-PyYAML
-simplejson

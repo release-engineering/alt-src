@@ -26,7 +26,7 @@ setup(
             "Programming Language :: Python :: 2.7",
             "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
       ],
-      install_requires=get_requirements(),
+      install_requires=["koji", "rpm", "requests", "PyYAML", "simplejson"],
       entry_points={
             "console_scripts": [
                   "alt-src = alt_src:entry_point",
