@@ -3,6 +3,9 @@ Alt src
 
 Alt-src is tool used to push patches in provided srpms into centos git.
 
+[![Build Status](https://travis-ci.org/release-engineering/alt-src.svg?branch=master)](https://travis-ci.org/release-engineering/alt-src)
+[![Coverage Status](https://coveralls.io/repos/github/release-engineering/alt-src/badge.svg?branch=master)](https://coveralls.io/github/release-engineering/alt-src?branch=master)
+
 Example
 -------
 
