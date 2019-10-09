@@ -17,7 +17,7 @@ from .matchers import exits
 
 # ensure python2 before attempting to import sources
 if sys.version_info < (3, 0):
-    from alt_src import (main, BaseProcessor, acquire_lock, StartupError,
+    from alt_src.alt_src import (main, BaseProcessor, acquire_lock, StartupError,
                          SanityError, InputError, CONFIG_DEFAULTS, Stager,
                          CommandError)
 
@@ -384,7 +384,7 @@ def test_repush_with_state_init(config_file, pushdir, lookasidedir, default_conf
     ]
 
     # call once, fail the task in staging process, the state ends with INIT
-    with patch("alt_src.Stager.setup_checkout", autospec=True, side_effect=RuntimeError):
+    with patch("alt_src.alt_src.Stager.setup_checkout", autospec=True, side_effect=RuntimeError):
         assert_that(calling(main).with_args(options), exits(2))
     # remove handlers
     remove_handlers()
@@ -427,7 +427,7 @@ def test_repush_with_state_none(config_file, lookasidedir, capsys):
     ]
 
     # call once, fail the task at state file creation, the state ends with None
-    with patch("alt_src.BaseProcessor.set_state",
+    with patch("alt_src.alt_src.BaseProcessor.set_state",
                autospec=True, side_effect=RuntimeError):
         assert_that(calling(main).with_args(options), exits(2))
     # remove handlers
@@ -477,7 +477,7 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
         os.path.join(RPMS_PATH, rpm)
     ]
 
-    with patch("alt_src.Pusher.push_git", autospec=True, side_effect=RuntimeError):
+    with patch("alt_src.alt_src.Pusher.push_git", autospec=True, side_effect=RuntimeError):
         assert_that(calling(main).with_args(options), exits(2))
 
     # before push again, we need to change the branch to some unkown branch
@@ -702,8 +702,8 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
                os.path.join(RPMS_PATH, rpm)
               ]
 
-    with patch("alt_src.Stager.init_new_repo") as mock_repo:
-        with patch("alt_src.BaseProcessor.log_cmd") as mock_cmd:
+    with patch("alt_src.alt_src.Stager.init_new_repo") as mock_repo:
+        with patch("alt_src.alt_src.BaseProcessor.log_cmd") as mock_cmd:
             mock_cmd.side_effect = log_cmd
             mock_repo.side_effect = init_repo
             assert_that(calling(main).with_args(options), exits(0))
@@ -916,7 +916,7 @@ def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
         check_call(cmd, cwd=pushdir)
         return '{"message": "Project \\"rpms/grub2\\" created"}'
 
-    with patch.dict("alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
+    with patch.dict("alt_src.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
         with patch("alt_src.alt_src.urlopen") as mock_resp:
             mock_resp.return_value.read.side_effect = side_eff
             # call main to push
@@ -963,7 +963,7 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
         check_call(cmd, cwd=pushdir)
         return '{"message": "Project \\"modules/%s\\" created"}' % mmd_dict['name']
 
-    with patch.dict("alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
+    with patch.dict("alt_src.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
         with patch("alt_src.alt_src.urlopen") as mock_resp:
             mock_resp.return_value.read.side_effect = side_eff
             # call main to push
@@ -979,9 +979,9 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
     ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', 'rpms'),
     (['--koji', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
 ])
-@patch("alt_src.Stager.default_tries")
-@patch("alt_src.Stager.debrand")
-@patch("alt_src.Pusher.push_git")
+@patch("alt_src.alt_src.Stager.default_tries")
+@patch("alt_src.alt_src.Stager.debrand")
+@patch("alt_src.alt_src.Pusher.push_git")
 @patch('os.path.isfile', side_effect=[True, True,] + 100*[False,])
 def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand,
                                patched_default_tries, config_file, key_file,
@@ -1020,7 +1020,7 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
     )
     with patch("os.path.exists") as mocked_exists:
         mocked_exists.side_effect = exists_original
-        with patch.dict("alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
+        with patch.dict("alt_src.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
             with patch("alt_src.alt_src.urlopen") as mock_resp:
                 mock_resp.return_value.read.side_effect = side_eff
                 main(options)
@@ -1043,13 +1043,13 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
     ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', 'rpms'),
     (['--koji', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
 ])
-@patch("alt_src.Pusher.push_lookaside")
-@patch("alt_src.Stager.import_sources")
-@patch("alt_src.BaseProcessor.log_cmd", return_value=0)
-@patch("alt_src.BaseProcessor.get_output")
-@patch("alt_src.BaseProcessor.default_tries")
-@patch("alt_src.Stager.debrand")
-@patch("alt_src.Pusher.push_git")
+@patch("alt_src.alt_src.Pusher.push_lookaside")
+@patch("alt_src.alt_src.Stager.import_sources")
+@patch("alt_src.alt_src.BaseProcessor.log_cmd", return_value=0)
+@patch("alt_src.alt_src.BaseProcessor.get_output")
+@patch("alt_src.alt_src.BaseProcessor.default_tries")
+@patch("alt_src.alt_src.Stager.debrand")
+@patch("alt_src.alt_src.Pusher.push_git")
 @patch('os.path.isfile', side_effect=[True, True,] + 100*[False, ])
 def test_push_remote_exists(patched_isfile, patched_push_git, patched_debrand,
                             patched_default_tries, patched_get_output,
@@ -1095,7 +1095,7 @@ def test_push_remote_exists(patched_isfile, patched_push_git, patched_debrand,
     )
     with patch("os.path.exists") as mocked_exists:
         mocked_exists.side_effect = exists_original
-        with patch.dict("alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
+        with patch.dict("alt_src.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
             main(options)
             mocked_exists.assert_any_call(repo_dir)
 

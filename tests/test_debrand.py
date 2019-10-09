@@ -11,7 +11,7 @@ import yaml
 
 # ensure python2 before attempting to import sources
 if sys.version_info < (3, 0):
-    from alt_src import Stager
+    from alt_src.alt_src import Stager
 
 xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason='Incompatible with python3')
 
