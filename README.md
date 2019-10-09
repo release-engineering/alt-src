@@ -1,23 +1,39 @@
-Alt src
+Alt-src
 =======
 
-Alt-src is tool used to push patches in provided srpms into centos git.
+Alt-src is a tool for pushing SRPM metadata into a git repo.
 
 [![Build Status](https://travis-ci.org/release-engineering/alt-src.svg?branch=master)](https://travis-ci.org/release-engineering/alt-src)
 [![Coverage Status](https://coveralls.io/repos/github/release-engineering/alt-src/badge.svg?branch=master)](https://coveralls.io/github/release-engineering/alt-src?branch=master)
 
-Example
+Alt-src takes source RPMs as input, unpacks packaging metadata such as .spec files and
+patch files, and pushes them into a git repository. It's most notably used to populate
+[CentOS git](https://git.centos.org).
+
+Usage
+-----
+
+    alt-src --push <branch> <package.src.rpm>
+
+This command will check out the git repo for the given package and branch, unpack the
+input RPM and create/push a new commit using the unpacked sources.
+A tag is also created under `imports/<branch>/<nvr>`.
+
+If a repo doesn't exist for the given package, the command will create one using
+the Pagure API.
+
+The command accepts these inputs:
+
+* `<package-filename.src.rpm>` - path to a local SRPM file
+* `--koji <build-nvr>` - SRPM is pulled from configured koji instance
+* `--koji <build-nvr>:module.src.txt` - instead of SRPM, modulemd is imported
+
+If enabled, the command also sends notifications to the configured email address.
+
+License
 -------
 
-alt-src --push <branch> <package.src.rpm>
-
-Script checkouts centos repository for the package on specified branch. Input rpm is then
-unpacked and all sources specified in spec file are staged to copy of git repository.
-If there are new sources, new commit is created and pushed with tag to centos git.
-
-It's possible to use following type of inputs
-local-package <package-filename.src.rpm>
---koji <package-nvr> - package srpm is pulled from configured koji instance
---koji <nvr>:module.src.txt - instead of srpm, modulemd is imported
-
-If enabled, script also sends notification of result to configured email address
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
