@@ -838,16 +838,17 @@ If you find this file in a distro specific branch, it means that no content has 
             retval = self.log_cmd(cmd, cwd=dst, fatal=False)
             if retval:
                 self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
-                cmd = ['git', 'checkout', '--orphan', branchname]
-                retval = self.log_cmd(cmd, cwd=dst, fatal=False)
-                if retval:
-                    # empty HEAD maybe, creating and pointing to master
-                    cmd = self.git_base_cmd()
-                    cmd.extend(['commit', '--allow-empty', '-m', 'init_branch'])
-                    self.log_cmd(cmd, cwd=dst)
-                    cmd = ['git', 'checkout', '--orphan', branchname]
-                    self.log_cmd(cmd, cwd=dst)
+                # create new branch
+                cmd = ['git', 'checkout', '-b', branchname]
+                self.log_cmd(cmd, cwd=dst)
+                # orphan the branch (remove parent)
+                cmd = ['git', 'update-ref', '-d', 'refs/heads/%s' % branchname]
+                self.log_cmd(cmd, cwd=dst)
+                # remove staged files
                 cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
+                self.log_cmd(cmd, cwd=dst)
+                # commit branch initialization
+                cmd = ['git', 'commit', '--allow-empty', '-m', 'init_branch']
                 self.log_cmd(cmd, cwd=dst)
             else:
                 cmd = ['git', 'checkout', '-b', branchname, base]
