@@ -3,7 +3,6 @@ sudo: false
 language: python
 
 before_install:
-  # for rpm-py-installer
   - sudo apt-get install -y rpm
 
 install: pip install tox
@@ -18,7 +17,6 @@ matrix:
 script: tox -e $TOX_ENV
 
 deploy:
-  # Adding a new tag automatically releases to PyPI.
   provider: pypi
   user: content-delivery-release-bot
   password:
