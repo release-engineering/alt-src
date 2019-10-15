@@ -1,14 +1,27 @@
 sudo: false
+
 language: python
+
 before_install:
-  # for rpm-py-installer
   - sudo apt-get install -y rpm
 
 install: pip install tox
+
 matrix:
   include:
-    - python: "2.7"
-      env: TOX_ENV=cov-travis
-    - python: "3.6"
-      env: TOX_ENV=py36
+  - python: "2.7"
+    env: TOX_ENV=cov-travis DEPLOY=1
+  - python: "3.6"
+    env: TOX_ENV=py36
+
 script: tox -e $TOX_ENV
+
+deploy:
+  provider: pypi
+  user: content-delivery-release-bot
+  password:
+    secure: PVrp8HcHKsPr/hJjIe2W0lZUvZ7ccOgwK+/rnhhUOzg5EyFSRlSVcaeGcmNken+l+VUP4uPnCKQwwLP15MOR1K4dZlha/68Vhry9Gk0LTfgfHwPaFzf3yuN2gJRKV6k2juyyER6qzfcFO23OQZg3Oqm4Uq5J8Hv7uR2r66vfs1n3DmVBwPR7rL6lGa59b5MyFdAydPbGD5dsJB/ilb3eSbwmgsgdanUQgreuUFzEyM/EsR11WN9o56xSPxoEySz2QOpyJHfbHeE7sIjS+Pmfwso+La/viyP0K2HAqx78/40EJY1QNdySPfd2Pd3Svdld1KVsqSxT9CXPK61Cdwe0Gd/O8lOP9hV+2UPA0qIcF7dxy66Wwt2z8BwNJQVCfot2G1Mc54N1h+1edQi9Vg7G2cbz+xTV/mfMgx1R4D3BdTqAWQsAWM49KxeQmB84HkDaXFUt9d0GQydYVUjQFJ5wrq883iXyNq+WSHPvJ1aheyYoBcygogRKtE92xORR1dHaP8VVfvEiLhHywm9SOne2qW429ySWaHIZIccw+mwFeKD44cKRiXX3PFOMj8DSH03KuVIgYdp6C5cWAAgmfvSentTGL0t64ytdPIURWnMuhdomWanZWT7BowbXAs4wIjKU/tlkE0xZa4jiy8e5NxKfQxYvWk8tqF6LyhXFrxBNob4=
+  on:
+    tags: true
+    condition: $DEPLOY = 1
+  skip_existing: true
