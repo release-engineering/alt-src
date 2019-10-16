@@ -14,14 +14,14 @@ def get_requirements():
 
 setup(
       name="alt-src",
-      version="1.0",
+      version="1.0.0",
       packages=find_packages(exclude=["tests"]),
       url="https://github.com/release-engineering/alt-src",
       license="GNU General Public License",
       description=get_description(),
       classifiers=[
             "Programming Language :: Python :: 2",
-            "Programming Language :: Python :: 2.4"
+            "Programming Language :: Python :: 2.4",
             "Programming Language :: Python :: 2.6",
             "Programming Language :: Python :: 2.7",
             "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
