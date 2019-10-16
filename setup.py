@@ -12,6 +12,15 @@ def get_requirements():
         return f.read().splitlines()
 
 
+def get_long_description():
+    with open("README.md") as f:
+        text = f.read()
+
+    # Long description is everything after README's initial heading
+    idx = text.find("\n\n")
+    return text[idx:]
+
+
 setup(
       name="alt-src",
       version="1.0.0",
@@ -19,6 +28,8 @@ setup(
       url="https://github.com/release-engineering/alt-src",
       license="GNU General Public License",
       description=get_description(),
+      long_description=get_long_description(),
+      long_description_content_type="text/markdown",
       classifiers=[
             "Programming Language :: Python :: 2",
             "Programming Language :: Python :: 2.4",
