@@ -3,6 +3,7 @@ Alt-src
 
 Alt-src is a tool for pushing SRPM metadata into a git repo.
 
+[![PyPI version](https://badge.fury.io/py/alt-src.svg)](https://badge.fury.io/py/alt-src)
 [![Build Status](https://travis-ci.org/release-engineering/alt-src.svg?branch=master)](https://travis-ci.org/release-engineering/alt-src)
 [![Coverage Status](https://coveralls.io/repos/github/release-engineering/alt-src/badge.svg?branch=master)](https://coveralls.io/github/release-engineering/alt-src?branch=master)
 
