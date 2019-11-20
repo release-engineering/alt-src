@@ -150,8 +150,8 @@ def remove_handlers():
 
 def get_test_mmd_str_and_dict():
     name = "my_package"
-    stream = "42"
-    version = 1
+    stream = "42.2"
+    version = "1.10"
     context = "c_1"
     summary = "foo_summary"
     mmd_dict = {'data':
@@ -162,7 +162,17 @@ def get_test_mmd_str_and_dict():
                      'summary': summary
                     }
                }
-    mmd_str = yaml.dump(mmd_dict)
+    mmd_str = """
+---
+document: modulemd
+version: 2
+data:
+  name: my_package
+  stream: 42.2
+  summary: foo_summary
+  context: c_1
+  version: 1.10
+"""
 
     return mmd_str, mmd_dict['data']
 

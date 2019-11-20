@@ -314,7 +314,7 @@ class BaseProcessor(object):
             self.read_srpm()
 
     def read_mmd(self):
-        self.mmd_parsed = yaml.load(self.mmd)
+        self.mmd_parsed = yaml.load(self.mmd, Loader=yaml.BaseLoader)
         module_data = self.mmd_parsed['data']
         fobj = open(self.source_file)
         try:
