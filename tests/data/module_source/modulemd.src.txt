@@ -1,6 +1,7 @@
 document: modulemd
 version: 2
 data:
+  stream: 1.10
   summary: PostgreSQL server and client module
   description: PostgreSQL is an advanced Object-Relational database management
                system (DBMS). The postgresql-server package contains the
