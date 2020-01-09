@@ -631,6 +631,17 @@ Staging failed for %(nvr)s.
             return True
         return False
 
+    def list_local_tags(self):
+        cmd = self.git_base_cmd()
+        cmd.extend(['tag', '-l'])
+        out, _ = self.get_output(cmd, cwd=self.checkout)
+        return out.split()
+
+    def delete_local_tag(self, tag):
+        cmd = self.git_base_cmd()
+        cmd.extend(['tag', '-d', tag])
+        self.log_cmd(cmd, cwd=self.checkout)
+
 
 class Stager(BaseProcessor):
     MMD_DEBRAND_RTYPES = [
@@ -1823,6 +1834,10 @@ class Pusher(BaseProcessor):
         #tag
         if self.options.config['push_tags']:
             tagname = self.get_import_tagname()
+            if tagname in self.list_local_tags():
+                self.logger.info("Deleting local tag %s", tagname)
+                self.delete_local_tag(tagname)
+
             cmd = self.git_base_cmd()
             cmd.extend(['tag', '-a', '-m', 'import %s' % self.nvr, tagname])
             self.log_cmd(cmd, cwd=self.checkout)
