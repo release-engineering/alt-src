@@ -413,6 +413,8 @@ def test_push_with_existing_local_tag(config_file, pushdir, lookasidedir,
                              git_push_url=os.path.join(pushdir, '%(package)s.git'),
                              log_level='DEBUG')
 
+    # clean handlers so they don't interfere with this test
+    remove_handlers()
     # setup logger for capturing stdout/stderr
     logger = logging.getLogger("altsrc")
     logger.setLevel(logging.DEBUG)
