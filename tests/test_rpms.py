@@ -433,7 +433,7 @@ def test_push_with_existing_local_tag(config_file, pushdir, lookasidedir,
     out_lines = out.splitlines()
 
     assert "Deleting local tag %s" % tag_name in out_lines
-    assert "" in err
+    assert not err
     # remove created logger handler so they don't interfere with other tests
     remove_handlers()
 
