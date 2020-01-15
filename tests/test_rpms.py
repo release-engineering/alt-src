@@ -18,7 +18,7 @@ from .matchers import exits
 # ensure python2 before attempting to import sources
 if sys.version_info < (3, 0):
     from alt_src.alt_src import (main, BaseProcessor, acquire_lock, StartupError,
-                         SanityError, InputError, CONFIG_DEFAULTS, Stager,
+                         SanityError, InputError, CONFIG_DEFAULTS, Stager, Pusher,
                          CommandError)
 
 xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
@@ -378,6 +378,66 @@ def test_repush_without_tag(config_file, pushdir, lookasidedir, branch,
     w_expect = '[WARNING] Already pushed'
     dupwarn = [l for l in out_lines if w_expect in l]
     assert dupwarn
+
+
+@xfail(strict=True)
+@pytest.mark.parametrize('branch,name,version,release', [
+    ('c7', 'grub2', '2.02', '0.64.el7'),
+])
+def test_push_with_existing_local_tag(config_file, pushdir, lookasidedir,
+                                      branch, name, version, release, default_config, capsys):
+    """Push with already existing tag locally"""
+
+    nvr = '-'.join([name, version, release])
+    tag_name = "imports/%s/%s" % (branch, nvr)
+    workdir = default_config['stagedir']+'/c7/rpms/g/grub2/grub2-2.02-0.64.el7/checkout'
+    os.makedirs(workdir)
+
+    # init repo
+    cmd = ['git', 'init']
+    check_call(cmd, cwd=workdir)
+    # create file for testing commit
+    file_to_stage = os.path.join(workdir, "fake.file")
+    open(file_to_stage, 'w')
+    # stage file
+    cmd = ['git', 'add', "fake.file"]
+    check_call(cmd, cwd=workdir)
+    # create fake commit, so we can tag it
+    cmd = ['git', 'commit', '-m', 'tagging test']
+    check_call(cmd, cwd=workdir)
+    # create local tag - this will simulate already existing tag that needs to be deleted
+    cmd = ['git', 'tag', tag_name]
+    check_call(cmd, cwd=workdir)
+
+    mock_options = MagicMock(koji=False, branch='c7',
+                             git_push_url=os.path.join(pushdir, '%(package)s.git'),
+                             log_level='DEBUG')
+
+    # clean handlers so they don't interfere with this test
+    remove_handlers()
+    # setup logger for capturing stdout/stderr
+    logger = logging.getLogger("altsrc")
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    logger.addHandler(handler)
+
+    with patch('os.path.isfile', return_value=True):
+        with patch('alt_src.alt_src.Pusher.git_push_url', return_value=workdir):
+            pusher = Pusher(mock_options)
+            # do a bit more setup for test
+            pusher.nvr = nvr
+            pusher.checkout = workdir
+            pusher.git_auth_set = True
+            # run desired function, that will delete already existing tag from previous push
+            pusher.push_git('PUSHED')
+
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+
+    assert "Deleting local tag %s" % tag_name in out_lines
+    assert not err
+    # remove created logger handler so they don't interfere with other tests
+    remove_handlers()
 
 
 @xfail(strict=True)
