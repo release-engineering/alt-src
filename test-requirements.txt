@@ -1,6 +1,5 @@
 mock
 PyHamcrest
-koji
 configparser
 six > 1.10
 

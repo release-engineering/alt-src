@@ -1,4 +1,4 @@
-koji
+koji < 1.20
 rpm
 requests
 PyYAML
