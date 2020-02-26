@@ -749,7 +749,7 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     def log_cmd(cmd, fatal=True, **kwargs):
         # fail creating orphan branch first time
         # other calls respond as executed
-        err_cmd = ['git', 'checkout', '--orphan', 'altsrc-stage-c7']
+        err_cmd = ['git', 'checkout', '-b', 'altsrc-stage-c7']
 
         if err_cmd == cmd and err_cmd_call_cnt[0] == 1:
             err_cmd_call_cnt[0] += 1

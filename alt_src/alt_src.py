@@ -851,16 +851,22 @@ If you find this file in a distro specific branch, it means that no content has 
                 self.logger.warn('Base branch %s missing, staging on an orphan branch', self.options.branch)
                 # create new branch
                 cmd = ['git', 'checkout', '-b', branchname]
-                self.log_cmd(cmd, cwd=dst)
+                retval = self.log_cmd(cmd, cwd=dst, fatal=False)
+                if retval:
+                    # commit for branch initialization
+                    # on error when switching with empty HEAD/unborn branch
+                    cmd = ['git', 'commit', '--allow-empty', '-m', 'init_branch']
+                    self.log_cmd(cmd, cwd=dst)
+                    # switch to new branch
+                    cmd = ['git', 'checkout', '-b', branchname]
+                    self.log_cmd(cmd, cwd=dst)
                 # orphan the branch (remove parent)
                 cmd = ['git', 'update-ref', '-d', 'refs/heads/%s' % branchname]
                 self.log_cmd(cmd, cwd=dst)
                 # remove staged files
                 cmd = ['git', 'rm', '-rf', '--ignore-unmatch', '.']
                 self.log_cmd(cmd, cwd=dst)
-                # commit branch initialization
-                cmd = ['git', 'commit', '--allow-empty', '-m', 'init_branch']
-                self.log_cmd(cmd, cwd=dst)
+
             else:
                 cmd = ['git', 'checkout', '-b', branchname, base]
                 self.log_cmd(cmd, cwd=dst)
