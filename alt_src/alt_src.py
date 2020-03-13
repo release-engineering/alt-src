@@ -502,7 +502,7 @@ class BaseProcessor(object):
         attempting to acquire the lock of 'lock' file, if failed, then wait for
         sleep_interval and re-try, the default longest waiting time is 60 mins.
         """
-        lock_file_path = os.path.join(self.workdir, 'lock')
+        lock_file_path = self.workdir + '.lock'
         wait_time = int(self.options.config['wait_time'])
         sleep_interval = int(self.options.config['sleep_interval'])
         self.logger.info('Setting current workdir to in progress')
@@ -691,7 +691,7 @@ class Stager(BaseProcessor):
             if self.options.restage:
                 self.logger.warn("Overwriting existing workdir: %s", dirname)
                 # TODO - back up first
-                koji.util.rmtree(dirname)
+                shutil.rmtree(dirname)
             else:
                 state = self.get_state()
                 if state == 'STAGED':
@@ -705,7 +705,7 @@ class Stager(BaseProcessor):
                 else:
                     self.logger.warn("Incomplete staging dir %s (state=%s), \
 will overwrite.", dirname, state)
-                    koji.util.rmtree(dirname)
+                    shutil.rmtree(dirname)
         elif os.path.exists(dirname):
             raise SanityError, "%s exists and is not a directory" % dirname
         self.logger.info('Creating working directory: %s', dirname)
