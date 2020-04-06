@@ -31,11 +31,14 @@ setup(
       long_description=get_long_description(),
       long_description_content_type="text/markdown",
       classifiers=[
+            "Development Status :: 4 - Beta",
+            "Intended Audience :: Developers",
             "Programming Language :: Python :: 2",
             "Programming Language :: Python :: 2.4",
             "Programming Language :: Python :: 2.6",
             "Programming Language :: Python :: 2.7",
             "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+            "Topic :: Software Development :: Libraries :: Python Modules",
       ],
       install_requires=get_requirements(),
       entry_points={
@@ -43,4 +46,7 @@ setup(
                   "alt-src = alt_src:entry_point",
             ],
       },
+      project_urls={
+        "Changelog": "https://github.com/release-engineering/alt-src/blob/master/CHANGELOG.md",
+    },
 )
