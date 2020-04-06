@@ -38,7 +38,6 @@ setup(
             "Programming Language :: Python :: 2.6",
             "Programming Language :: Python :: 2.7",
             "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
-            "Topic :: Software Development :: Libraries :: Python Modules",
       ],
       install_requires=get_requirements(),
       entry_points={
