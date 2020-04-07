@@ -31,6 +31,8 @@ setup(
       long_description=get_long_description(),
       long_description_content_type="text/markdown",
       classifiers=[
+            "Development Status :: 4 - Beta",
+            "Intended Audience :: Developers",
             "Programming Language :: Python :: 2",
             "Programming Language :: Python :: 2.4",
             "Programming Language :: Python :: 2.6",
@@ -43,4 +45,7 @@ setup(
                   "alt-src = alt_src:entry_point",
             ],
       },
+      project_urls={
+        "Changelog": "https://github.com/release-engineering/alt-src/blob/master/CHANGELOG.md",
+    },
 )

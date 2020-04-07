@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - n/a
 
-## 1.1.0 - 2020-04-02
+## [1.1.0] - 2020-04-02
 
 ### Changed
 - Used Yaml BaseLoader to avoid conversion errors
