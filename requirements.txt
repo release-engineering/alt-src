@@ -3,3 +3,4 @@ rpm-py-installer
 requests
 PyYAML
 simplejson
+six
