@@ -2,12 +2,8 @@
 '''
 Given an srpm and product, stage for alt-src release
 '''
-from __future__ import print_function
 
-import six
-from six.moves import configparser
 import copy
-from six.moves import cStringIO as StringIO
 import datetime
 import errno
 import fcntl
@@ -19,15 +15,18 @@ import os
 import os.path
 import re
 import shutil
+import simplejson as json
+import six
+from six.moves import configparser
+from six.moves import cStringIO as StringIO
+from six.moves.urllib.parse import urlencode
+from six.moves.urllib.request import Request, urlopen
 import smtplib
 import subprocess
 import sys
 import time
 import traceback
-from six.moves.urllib.parse import urlencode
-from six.moves.urllib.request import Request, urlopen
 import yaml
-import simplejson as json
 
 import koji
 import rpm
@@ -206,7 +205,7 @@ class BaseProcessor(object):
             if ntimes > 1024:
                 raise SanityError("Too many log backups")
             fname = "%s.%d" % (fname_, ntimes)
-        self.logfile = file(fname, 'w')
+        self.logfile = open(fname, 'w')
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(self.options.file_log_level)
@@ -265,13 +264,13 @@ class BaseProcessor(object):
         if 'stderr' in kwargs:
             # convenience values
             if kwargs['stderr'] == 'null':
-                kwargs['stderr'] = file('/dev/null', 'w')
+                kwargs['stderr'] = open('/dev/null', 'w')
             elif kwargs['stderr'] == 'keep':
                 kwargs['stderr'] = subprocess.STDOUT
         elif self.logfile:
             self.logfile.flush()
             kwargs['stderr'] = self.logfile
-        proc = subprocess.Popen(cmd, **kwargs)
+        proc = subprocess.Popen(cmd, universal_newlines=True, **kwargs)
         output = proc.communicate()[0]
         self.logger.debug("Command output was:\n%s", output)
         retval = proc.wait()
@@ -377,7 +376,7 @@ class BaseProcessor(object):
             self.logger.debug("Got blacklist: %r", blacklist)
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
                 # raise FilterError, 'Blacklisted package: %s' % self.package
-                print('Blacklisted package: %s, quitting' % self.package)
+                self.logger.info('Blacklisted package: %s, quitting' % self.package)
                 sys.exit(0)
 
     def git_push_url(self):
@@ -805,7 +804,7 @@ If you find this file in a distro specific branch, it means that no content has 
         cmd = ['git', 'clone', '--bare', initdir, "repo_init.git"]
         self.log_cmd(cmd, cwd=self.workdir)
         descfile = os.path.join(self.workdir, "repo_init.git", "description")
-        fobj = file(descfile, 'w')
+        fobj = open(descfile, 'w')
         fobj.write(self.summary)
         fobj.write('\n')
         fobj.close()
@@ -813,7 +812,7 @@ If you find this file in a distro specific branch, it means that no content has 
             # add gitblit options to git config
             # XXX this content should not be hard coded
             git_config = os.path.join(self.workdir, "repo_init.git", "config")
-            fobj = file(git_config, 'a')
+            fobj = open(git_config, 'a')
             params = {
                 'summary' : self.summary,
                 'package' : self.package,
@@ -950,8 +949,8 @@ If you find this file in a distro specific branch, it means that no content has 
         to_move.sort()
 
         # move files to lookaside
-        meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
-        gitignore = file(os.path.join(dst, ".gitignore"), 'w')
+        meta = open(os.path.join(dst, ".%s.metadata" % self.package), 'w')
+        gitignore = open(os.path.join(dst, ".gitignore"), 'w')
         for fname in to_move:
             path = os.path.join(sourcedir, fname)
             digest = self.get_digest(path)
@@ -997,7 +996,7 @@ If you find this file in a distro specific branch, it means that no content has 
         """Calculate hex digest for file"""
 
         csum = hashlib.sha1()
-        fobj = file(path, 'rb')
+        fobj = open(path, 'rb')
         chunk = 'IGNORE ME!'
         while chunk:
             chunk = fobj.read(8192)
@@ -1118,8 +1117,8 @@ If you find this file in a distro specific branch, it means that no content has 
                 if self.for_lookaside(path):
                     for_lookaside.append(fname)
         if for_lookaside:
-            meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'a')
-            gitignore = file(os.path.join(self.checkout, ".gitignore"), 'a')
+            meta = open(os.path.join(self.checkout, ".%s.metadata" % self.package), 'a')
+            gitignore = open(os.path.join(self.checkout, ".gitignore"), 'a')
             for fname in for_lookaside:
                 path = os.path.join(self.checkout, fname)
                 digest = self.get_digest(path)
@@ -1167,7 +1166,7 @@ If you find this file in a distro specific branch, it means that no content has 
 
         self.logger.warning("Adding debranding failure notice")
         fname = os.path.join(self.checkout, "README.debrand")
-        fobj = file(fname, 'w')
+        fobj = open(fname, 'w')
         fobj.write('''\
 Warning: This package was configured for automatic debranding, but the changes
 failed to apply.
@@ -1202,7 +1201,7 @@ failed to apply.
                         parts.append('- %s\n' % line)
                     else:
                         parts.append('-  %s\n' % line)
-        fobj = file(os.path.join(self.workdir, 'changelog.txt'), 'w')
+        fobj = open(os.path.join(self.workdir, 'changelog.txt'), 'w')
         for part in parts:
             fobj.write(part)
             self.logger.debug("%s", part)
@@ -1279,7 +1278,7 @@ failed to apply.
             fname = os.path.join(self.checkout, data['file'])
         else:
             fname = self.find_spec()
-        fobj = file(fname, 'r')
+        fobj = open(fname, 'r')
         text = fobj.read()
         fobj.close()
         count = int(data.get('count', '0'))
@@ -1287,7 +1286,7 @@ failed to apply.
             text = re.sub(data['match'], data['replace'], text, count)
         else:
             text = re.sub(data['match'], data['replace'], text)
-        fobj = file(fname, 'w')
+        fobj = open(fname, 'w')
         fobj.write(text)
         fobj.close()
 
@@ -1329,7 +1328,7 @@ failed to apply.
         else:
             fname = self.find_spec()
         self.logger.info('Applying regex substitutions to %s', fname)
-        fobj = file(fname, 'r')
+        fobj = open(fname, 'r')
         lines = fobj.readlines()
         fobj.close()
         prog = re.compile(data['match'])
@@ -1353,7 +1352,7 @@ failed to apply.
         else:
             self.logger.error('No matches for pattern %r', prog.pattern)
         # write it back out
-        fobj = file(fname, 'w')
+        fobj = open(fname, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1376,7 +1375,7 @@ failed to apply.
         patchstrip = int(data.get('strip', '1'))
         self.logger.debug("Adding patch: %r", data)
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
         # find highest patch number and last patch line location
@@ -1468,7 +1467,7 @@ failed to apply.
                 raise SanityError("Unable to apply patch %s" % patchname)
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1498,7 +1497,7 @@ failed to apply.
             raise SanityError('Invalid rule')
 
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
 
@@ -1536,7 +1535,7 @@ failed to apply.
                 raise SanityError("Unable to remove patch")
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1560,7 +1559,7 @@ failed to apply.
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
 
@@ -1598,7 +1597,7 @@ failed to apply.
         self.copy_new_source(sourcefile)
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1608,7 +1607,7 @@ failed to apply.
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
 
@@ -1639,7 +1638,7 @@ failed to apply.
         #TODO - option to remove old
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1732,7 +1731,7 @@ class Pusher(BaseProcessor):
         self.log_cmd(['git', 'checkout', stage_branch], cwd=self.checkout)
 
         # get the changelog entry
-        fobj = file(fname, 'r')
+        fobj = open(fname, 'r')
         clog = fobj.read()
         now = datetime.datetime.now().strftime('%a %b %d %Y')
         if clog.find('INSERT_DATE_HERE') == -1:
@@ -1743,7 +1742,7 @@ class Pusher(BaseProcessor):
         # insert the entry into spec
         spec = self.find_spec()
         prog = re.compile(r'^(\s*%changelog.*)$', re.MULTILINE)
-        inf = file(spec, 'r')
+        inf = open(spec, 'r')
         parts = prog.split(inf.read())
         inf.close()
         if len(parts) == 1:
@@ -1752,7 +1751,7 @@ class Pusher(BaseProcessor):
         elif len(parts) == 2:
             # should not be possible
             raise SanityError('Unable to split changelog from spec')
-        outf = file(spec, 'w')
+        outf = open(spec, 'w')
         for part in parts[:2]:
             outf.write(part)
         outf.write('\n')
@@ -1924,7 +1923,7 @@ class Pusher(BaseProcessor):
 
 
     def push_lookaside(self):
-        meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
+        meta = open(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
         for line in meta.readlines():
             line = line.strip()
             digest, _ = line.split(None, 1)
@@ -2005,7 +2004,7 @@ def wipe_git_dir(dirname):
 
 
 def die(msg):
-    print(msg)
+    self.logger.error(msg)
     sys.exit(1)
 
 
