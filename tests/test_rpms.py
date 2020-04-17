@@ -9,19 +9,16 @@ from multiprocessing import Process
 from subprocess import PIPE, Popen, check_call, check_output
 import pytest
 import yaml
+import six
 from configparser import RawConfigParser
 from hamcrest import assert_that, calling, empty, equal_to, not_, raises
 from mock import MagicMock, call, patch
 
 from .matchers import exits
 
-# ensure python2 before attempting to import sources
-if sys.version_info < (3, 0):
-    from alt_src.alt_src import (main, BaseProcessor, acquire_lock, StartupError,
-                         SanityError, InputError, CONFIG_DEFAULTS, Stager, Pusher,
-                         CommandError)
-
-xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason="Incompatible with python3")
+from alt_src.alt_src import (main, BaseProcessor, acquire_lock, StartupError,
+                        SanityError, InputError, CONFIG_DEFAULTS, Stager, Pusher,
+                        CommandError)
 
 TESTS_PATH = os.path.dirname(__file__)
 RPMS_PATH = os.path.join(TESTS_PATH, 'data', 'rpms')
@@ -135,7 +132,7 @@ def mock_koji_pathinfo():
 def git_subject(git_dir, ref):
     """Return subject of a git ref within the given path."""
     cmd = ['git', 'show', '-s', '--format=%s', ref]
-    proc = Popen(cmd, cwd=git_dir, stdout=PIPE)
+    proc = Popen(cmd, cwd=git_dir, stdout=PIPE, universal_newlines=True)
     out, _ = proc.communicate()
 
     assert_that(proc.returncode, equal_to(0), "`git show' failed")
@@ -177,7 +174,6 @@ data:
     return mmd_str, mmd_dict['data']
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
@@ -217,7 +213,6 @@ def test_push_with_debrand(config_file, pushdir, lookasidedir,
     remove_handlers()
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
@@ -270,7 +265,6 @@ def test_repush_with_staged_data(config_file, pushdir, lookasidedir,
     assert_that(files, not_(empty()))
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
@@ -333,7 +327,6 @@ def test_repush_without_staged_data(config_file, pushdir, lookasidedir,
     assert_that(files, not_(empty()))
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'fake', '1.1', '22'),
     # need no-debrand packages for this test
@@ -380,7 +373,6 @@ def test_repush_without_tag(config_file, pushdir, lookasidedir, branch,
     assert dupwarn
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('branch,name,version,release', [
     ('c7', 'grub2', '2.02', '0.64.el7'),
 ])
@@ -440,7 +432,6 @@ def test_push_with_existing_local_tag(config_file, pushdir, lookasidedir,
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_repush_with_state_init(config_file, pushdir, lookasidedir, default_config, capsys):
 
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
@@ -478,7 +469,6 @@ def test_repush_with_state_init(config_file, pushdir, lookasidedir, default_conf
     assert_that(files, not_(empty()))
 
 
-@xfail(strict=True)
 def test_repush_with_state_none(config_file, lookasidedir, capsys):
     """
     set_state fails, state file is not created, so get_state fails to open
@@ -522,19 +512,16 @@ def test_repush_with_state_none(config_file, lookasidedir, capsys):
     assert_that(files, not_(empty()))
 
 
-@xfail(strict=True)
 def test_get_state_with_error_other_than_enoent(tempdir):
     options = MagicMock(koji=None, source=tempfile.mkstemp(dir=tempdir)[1])
     processor = BaseProcessor(options)
-    processor.workdir = tempfile.mkstemp(dir=tempdir)[1]
-
+    processor.workdir = tempdir
     # attempting to open state file raises generic IOError
-    with patch('__builtin__.open', autospec=True, side_effect=IOError):
+    with patch('six.moves.builtins.open', autospec=True, side_effect=IOError):
         # error is raised by method because only ENOENT is handled
         assert_that(calling(processor.get_state), raises(IOError))
 
 
-@xfail(strict=True)
 def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_config, capsys):
 
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
@@ -577,7 +564,6 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     assert_that(files, not_(empty()))
 
 
-@xfail(strict=True)
 def test_log_cmd_with_retries(capsys):
 
     mock_options = MagicMock(koji=False)
@@ -602,7 +588,6 @@ def test_log_cmd_with_retries(capsys):
     assert expected in err
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('cmd, expected', [(['git', 'clone', 'some_git_url'], 4),
                                            (['rsync', 'src', 'dst'], 4),
                                            (['echo', 'foo'], 1)
@@ -619,7 +604,6 @@ def test_default_tries(cmd, expected):
     assert processor.default_tries(cmd) == expected
 
 
-@xfail(strict=True)
 def test_push_when_already_pushed(config_file, lookasidedir, default_config, capsys):
     """
     test if the same content has already pushed to remote,
@@ -657,7 +641,7 @@ def test_push_when_already_pushed(config_file, lookasidedir, default_config, cap
     # check if both tags are in the remote repo
     git_url = default_config['git_push_url'] % {'package':'rcm-repoquery'}
     cmd = ['git', 'tag']
-    out = check_output(cmd, cwd=git_url)
+    out = check_output(cmd, cwd=git_url, universal_newlines=True)
     assert sorted(out.splitlines()) == ['imports/c7/rcm-repoquery-1.4-1.bar',
                             'imports/c7/rcm-repoquery-1.4-1.foo']
 
@@ -667,7 +651,6 @@ def test_push_when_already_pushed(config_file, lookasidedir, default_config, cap
     assert_that(files, not_(empty()))
 
 
-@xfail(strict=True)
 def test_acquire_release_lock(tempdir):
     # test lock and relase file lock function works as expected
     logger = logging.getLogger('altsrc')
@@ -708,7 +691,6 @@ def test_acquire_release_lock(tempdir):
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_stage_only(config_file, pushdir, capsys):
     """
     test a task without push option
@@ -730,7 +712,6 @@ def test_stage_only(config_file, pushdir, capsys):
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     """
     check staging on new branch in repo having no master branch
@@ -786,7 +767,6 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_not_existing_source_file(config_file):
     rpm = 'foo.src.rpm'
 
@@ -800,7 +780,6 @@ def test_not_existing_source_file(config_file):
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_srpm_koji(mock_koji_session, mock_koji_pathinfo):
     mock_koji_session.return_value.getRPM.return_value = {'arch': 'src', 'build_id': 42}
     mock_koji_pathinfo.return_value.build.return_value = "test_build"
@@ -812,7 +791,6 @@ def test_srpm_koji(mock_koji_session, mock_koji_pathinfo):
         assert_that(processor.source_file, equal_to("test_build/test_relpath"))
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('getRPM_return_value',
                          [{'arch': 'foo'}, None],
                          ids=("wrong_arch", "source_not_found"))
@@ -825,7 +803,6 @@ def test_srpm_koji_sanity_error(getRPM_return_value, mock_koji_session, mock_koj
     assert_that(calling(BaseProcessor).with_args(mock_options), raises(SanityError))
 
 
-@xfail(strict=True)
 def test_module_src_koji(mock_koji_session, mock_koji_pathinfo):
     binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': "foo_module_str"}}}}
     mock_koji_session.return_value.getBuild.return_value = binfo
@@ -838,7 +815,6 @@ def test_module_src_koji(mock_koji_session, mock_koji_pathinfo):
         assert_that(processor.mmd, equal_to("foo_module_str"))
 
 
-@xfail(strict=True)
 def test_module_src_koji_build_not_found(mock_koji_session, mock_koji_pathinfo):
     mock_koji_session.return_value.getBuild.return_value = None
     mock_koji_pathinfo.return_value.build.return_value = "test_build"
@@ -847,7 +823,6 @@ def test_module_src_koji_build_not_found(mock_koji_session, mock_koji_pathinfo):
     assert_that(calling(BaseProcessor).with_args(mock_options), raises(SanityError))
 
 
-@xfail(strict=True)
 def test_read_srpm_input_error(mock_koji_session, mock_koji_pathinfo):
     mock_koji_session.return_value.getRPM.return_value = {'arch': 'src', 'build_id': 42}
     mock_koji_pathinfo.return_value.build.return_value = "test_build"
@@ -860,7 +835,6 @@ def test_read_srpm_input_error(mock_koji_session, mock_koji_pathinfo):
             assert_that(calling(processor.read_srpm), raises(InputError))
 
 
-@xfail(strict=True)
 def test_read_mmd_str(mock_koji_session, mock_koji_pathinfo):
     mmd_str, mmd_dict = get_test_mmd_str_and_dict()
 
@@ -878,7 +852,6 @@ def test_read_mmd_str(mock_koji_session, mock_koji_pathinfo):
     assert_that(processor.summary, equal_to(mmd_dict['summary']))
 
 
-@xfail(strict=True)
 def test_mmd_no_changelog(mock_koji_session, mock_koji_pathinfo):
     mmd_str, mmd_dict = get_test_mmd_str_and_dict()
     mock_koji_pathinfo.return_value.rpm.return_value = "test_relpath"
@@ -897,7 +870,6 @@ def test_mmd_no_changelog(mock_koji_session, mock_koji_pathinfo):
     assert_that(processor.package, equal_to(mmd_dict['name']))
 
 
-@xfail(strict=True)
 def test_git_url_module(mock_koji_session, mock_koji_pathinfo):
     mmd_str, mmd_dict = get_test_mmd_str_and_dict()
     binfo = {'extra': {'typeinfo': {'module': {'modulemd_str': mmd_str}}}}
@@ -920,13 +892,11 @@ def test_git_url_module(mock_koji_session, mock_koji_pathinfo):
                              % {'package': mmd_dict['name']}))
 
 
-@xfail(strict=True)
 def test_unsupported_source_startup_error():
     mock_options = MagicMock(koji=True, source="build_nvr.src.foo")
     assert_that(calling(BaseProcessor).with_args(mock_options), raises(StartupError))
 
 
-@xfail(strict=True)
 def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_config,
                           mock_koji_session, mock_koji_pathinfo):
     """Verify that alt-src command completes without any errors and generates
@@ -964,7 +934,6 @@ def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_co
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
 
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
@@ -1003,7 +972,6 @@ def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
     remove_handlers()
 
 
-@xfail(strict=True)
 def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
                                mock_koji_session, mock_koji_pathinfo):
     """ verifies modules are pushed to pagure repo without any error """
@@ -1044,7 +1012,6 @@ def test_push_module_to_pagure(config_file, key_file, pushdir, capsys,
     assert_that(len(err), equal_to(0))
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('cmd_args,package,expected_extra_dir', [
     ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', 'rpms'),
     (['--koji', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
@@ -1108,7 +1075,6 @@ def test_push_remote_not_exist(patched_isfile, patched_push_git, patched_debrand
     assert missing_repo_str in std
     assert "Initializing new repo:" in std
 
-@xfail(strict=True)
 @pytest.mark.parametrize('cmd_args,package,expected_extra_dir', [
     ([os.path.join(RPMS_PATH, 'grub2-2.02-0.64.el7.src.rpm')], 'grub2', 'rpms'),
     (['--koji', 'fake-nvr:modulemd.src.txt'], 'my_package', 'modules'),
@@ -1173,7 +1139,6 @@ def test_push_remote_exists(patched_isfile, patched_push_git, patched_debrand,
     assert "Initializing new repo:" not in std
 
 
-@xfail(strict=True)
 def test_option_alias(config_file, pushdir, lookasidedir, default_config, capsys):
 
     rpm = 'grub2-2.02-0.64.el7'

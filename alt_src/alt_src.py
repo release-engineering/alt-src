@@ -3,9 +3,7 @@
 Given an srpm and product, stage for alt-src release
 '''
 
-import ConfigParser
 import copy
-import cStringIO
 import datetime
 import errno
 import fcntl
@@ -17,15 +15,18 @@ import os
 import os.path
 import re
 import shutil
+import simplejson as json
+import six
+from six.moves import configparser
+from six.moves import cStringIO as StringIO
+from six.moves.urllib.parse import urlencode
+from six.moves.urllib.request import Request, urlopen
 import smtplib
 import subprocess
 import sys
 import time
 import traceback
-from urllib import urlencode
-from urllib2 import Request, urlopen
 import yaml
-import simplejson as json
 
 import koji
 import rpm
@@ -73,7 +74,7 @@ CONFIG_BOOL_OPTS = set(['smtp_enabled', 'push_tags', 'debrand'])
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
         die("Missing config file: %s" % cfile)
-    confp = ConfigParser.RawConfigParser()
+    confp = configparser.RawConfigParser()
     confp.read(cfile)
     if not confp.has_section('altsrc'):
         die("Configuration file missing [altsrc] section: %s" % cfile)
@@ -180,14 +181,14 @@ class BaseProcessor(object):
             self.rpms_or_module_dir = 'rpms'
 
         if not os.path.isfile(self.source_file):
-            raise StartupError, "No such file: %s" % self.source_file
+            raise StartupError("No such file: %s" % self.source_file)
 
     def run(self):
         raise NotImplementedError
 
     def add_error_logger(self):
         """Capture all error messages for use in later notifications"""
-        self.error_log = cStringIO.StringIO()
+        self.error_log = StringIO()
         handler = logging.StreamHandler(self.error_log)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(logging.ERROR)
@@ -195,16 +196,16 @@ class BaseProcessor(object):
 
     def setup_logfile(self, logname):
         if not os.path.isdir(self.workdir):
-            raise SanityError, "Work dir does not exist: %s" % self.workdir
+            raise SanityError("Work dir does not exist: %s" % self.workdir)
         fname = fname_ = os.path.join(self.workdir, logname)
         ntimes = 0
         while os.path.exists(fname):
             # don't overwrite an old logfile
             ntimes += 1
             if ntimes > 1024:
-                raise SanityError, "Too many log backups"
+                raise SanityError("Too many log backups")
             fname = "%s.%d" % (fname_, ntimes)
-        self.logfile = file(fname, 'w')
+        self.logfile = open(fname, 'w')
         handler = logging.StreamHandler(self.logfile)
         handler.setFormatter(logging.Formatter(self.options.config['log_format']))
         handler.setLevel(self.options.file_log_level)
@@ -250,7 +251,7 @@ class BaseProcessor(object):
                 time.sleep(sleep_time)
         if ret:
             if fatal:
-                raise CommandError, "command failed: %r" % cmd
+                raise CommandError("command failed: %r" % cmd)
             #otherwise
             self.logger.warn("Command failed: %r", cmd)
         return ret
@@ -263,20 +264,20 @@ class BaseProcessor(object):
         if 'stderr' in kwargs:
             # convenience values
             if kwargs['stderr'] == 'null':
-                kwargs['stderr'] = file('/dev/null', 'w')
+                kwargs['stderr'] = open('/dev/null', 'w')
             elif kwargs['stderr'] == 'keep':
                 kwargs['stderr'] = subprocess.STDOUT
         elif self.logfile:
             self.logfile.flush()
             kwargs['stderr'] = self.logfile
-        proc = subprocess.Popen(cmd, **kwargs)
+        proc = subprocess.Popen(cmd, universal_newlines=True, **kwargs)
         output = proc.communicate()[0]
         self.logger.debug("Command output was:\n%s", output)
         retval = proc.wait()
         if retval:
             self.logger.warn("Command failed: %r", cmd)
             if fatal:
-                raise CommandError, "command failed: %r" % cmd
+                raise CommandError("command failed: %r" % cmd)
         return output, retval
 
     def _get_koji_session_and_pathinfo(self):
@@ -289,9 +290,9 @@ class BaseProcessor(object):
         session, pathinfo = self._get_koji_session_and_pathinfo()
         rpminfo = session.getRPM(self.options.source)
         if not rpminfo:
-            raise SanityError, "No such rpm: %s" % self.options.source
+            raise SanityError("No such rpm: %s" % self.options.source)
         if rpminfo['arch'] != 'src':
-            raise SanityError, "Not a source rpm: %s" % self.options.source
+            raise SanityError("Not a source rpm: %s" % self.options.source)
         binfo = session.getBuild(rpminfo['build_id'])
         bdir = pathinfo.build(binfo)
         relpath = pathinfo.rpm(rpminfo)
@@ -336,7 +337,7 @@ class BaseProcessor(object):
         headers = koji.get_rpm_header(self.source_file)
         self.headers = headers
         if headers[rpm.RPMTAG_SOURCEPACKAGE] != 1:
-            raise InputError, "%s is not a source package" % self.source_file
+            raise InputError("%s is not a source package" % self.source_file)
         data = koji.get_header_fields(headers, ['name', 'version', 'release', 'summary'])
         self.nvr = "%(name)s-%(version)s-%(release)s" % data
         self.package = data['name']
@@ -375,7 +376,7 @@ class BaseProcessor(object):
             self.logger.debug("Got blacklist: %r", blacklist)
             if blacklist and koji.util.multi_fnmatch(self.package, blacklist):
                 # raise FilterError, 'Blacklisted package: %s' % self.package
-                print 'Blacklisted package: %s, quitting' % self.package
+                self.logger.info('Blacklisted package: %s, quitting' % self.package)
                 sys.exit(0)
 
     def git_push_url(self):
@@ -440,7 +441,7 @@ class BaseProcessor(object):
             if fname.endswith('.spec'):
                 return os.path.join(specdir, fname)
 
-        raise SanityError, 'No spec file in checkout: %s' % self.checkout
+        raise SanityError('No spec file in checkout: %s' % self.checkout)
 
     def duplicate_check(self):
         """Check to see if we're already on remote"""
@@ -485,7 +486,7 @@ class BaseProcessor(object):
 
     def set_state(self, state):
         if not self.workdir:
-            raise SanityError, "No workdir to set state for"
+            raise SanityError("No workdir to set state for")
         statefile = os.path.join(self.workdir, 'state')
         self.logger.debug('Writing state %s to file %s', state, statefile)
         fobj = open(statefile, 'w')
@@ -684,7 +685,7 @@ class Stager(BaseProcessor):
         self.workdir = dirname = self.get_workdir()
         koji.ensuredir(os.path.dirname(self.workdir))
         if os.path.islink(dirname):
-            raise SanityError, "%s is a symlink" % dirname
+            raise SanityError("%s is a symlink" % dirname)
         elif os.path.isdir(dirname):
             # TODO - more sanity checks
             self.set_in_progress()
@@ -707,7 +708,7 @@ class Stager(BaseProcessor):
 will overwrite.", dirname, state)
                     shutil.rmtree(dirname)
         elif os.path.exists(dirname):
-            raise SanityError, "%s exists and is not a directory" % dirname
+            raise SanityError("%s exists and is not a directory" % dirname)
         self.logger.info('Creating working directory: %s', dirname)
         koji.ensuredir(dirname)
         self.set_in_progress()
@@ -803,7 +804,7 @@ If you find this file in a distro specific branch, it means that no content has 
         cmd = ['git', 'clone', '--bare', initdir, "repo_init.git"]
         self.log_cmd(cmd, cwd=self.workdir)
         descfile = os.path.join(self.workdir, "repo_init.git", "description")
-        fobj = file(descfile, 'w')
+        fobj = open(descfile, 'w')
         fobj.write(self.summary)
         fobj.write('\n')
         fobj.close()
@@ -811,7 +812,7 @@ If you find this file in a distro specific branch, it means that no content has 
             # add gitblit options to git config
             # XXX this content should not be hard coded
             git_config = os.path.join(self.workdir, "repo_init.git", "config")
-            fobj = file(git_config, 'a')
+            fobj = open(git_config, 'a')
             params = {
                 'summary' : self.summary,
                 'package' : self.package,
@@ -948,8 +949,8 @@ If you find this file in a distro specific branch, it means that no content has 
         to_move.sort()
 
         # move files to lookaside
-        meta = file(os.path.join(dst, ".%s.metadata" % self.package), 'w')
-        gitignore = file(os.path.join(dst, ".gitignore"), 'w')
+        meta = open(os.path.join(dst, ".%s.metadata" % self.package), 'w')
+        gitignore = open(os.path.join(dst, ".gitignore"), 'w')
         for fname in to_move:
             path = os.path.join(sourcedir, fname)
             digest = self.get_digest(path)
@@ -995,7 +996,7 @@ If you find this file in a distro specific branch, it means that no content has 
         """Calculate hex digest for file"""
 
         csum = hashlib.sha1()
-        fobj = file(path, 'rb')
+        fobj = open(path, 'rb')
         chunk = 'IGNORE ME!'
         while chunk:
             chunk = fobj.read(8192)
@@ -1019,7 +1020,7 @@ If you find this file in a distro specific branch, it means that no content has 
             if st1.st_size != st2.st_size:
                 self.logger.error("Possibly corrupt lookaside entry: %s", lpath)
                 self.logger.error("Size: %s, but current matching source is %s", st1.st_size, st2.st_size)
-                raise SanityError, "Lookaside size mismatch"
+                raise SanityError("Lookaside size mismatch")
             # TODO - more sanity checks
             self.logger.info('Skipping source, already in digest: %s', path)
 
@@ -1030,7 +1031,7 @@ If you find this file in a distro specific branch, it means that no content has 
         if not self.options.config['debrand']:
             self.logger.warning("Debranding is disabled")
             return
-        confp = ConfigParser.RawConfigParser()
+        confp = configparser.RawConfigParser()
         for name in 'altsrc-global', self.package:
             cfile = os.path.join(self.options.config['rulesdir'], name + '.cfg')
             self.logger.debug('Looking for rules in %s', cfile)
@@ -1063,7 +1064,7 @@ If you find this file in a distro specific branch, it means that no content has 
         for key, rtype, section in rules:
             handler = 'rule_handler_%s' % rtype
             if not hasattr(self, handler):
-                raise ConfigError, "No handler for rule type %s" % rtype
+                raise ConfigError("No handler for rule type %s" % rtype)
             data = dict(confp.items(section))
             if 'enabled' in data:
                 enabled = data['enabled'].lower().strip()
@@ -1116,8 +1117,8 @@ If you find this file in a distro specific branch, it means that no content has 
                 if self.for_lookaside(path):
                     for_lookaside.append(fname)
         if for_lookaside:
-            meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'a')
-            gitignore = file(os.path.join(self.checkout, ".gitignore"), 'a')
+            meta = open(os.path.join(self.checkout, ".%s.metadata" % self.package), 'a')
+            gitignore = open(os.path.join(self.checkout, ".gitignore"), 'a')
             for fname in for_lookaside:
                 path = os.path.join(self.checkout, fname)
                 digest = self.get_digest(path)
@@ -1142,7 +1143,7 @@ If you find this file in a distro specific branch, it means that no content has 
         cmd = ['git', 'diff', '--cached', '--name-only']
         output, _ = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
         if not output:
-            raise SanityError, "Debranding rules made no changes"
+            raise SanityError("Debranding rules made no changes")
             # caller will clean up
 
         cmd = self.git_base_cmd()
@@ -1165,7 +1166,7 @@ If you find this file in a distro specific branch, it means that no content has 
 
         self.logger.warning("Adding debranding failure notice")
         fname = os.path.join(self.checkout, "README.debrand")
-        fobj = file(fname, 'w')
+        fobj = open(fname, 'w')
         fobj.write('''\
 Warning: This package was configured for automatic debranding, but the changes
 failed to apply.
@@ -1200,7 +1201,7 @@ failed to apply.
                         parts.append('- %s\n' % line)
                     else:
                         parts.append('-  %s\n' % line)
-        fobj = file(os.path.join(self.workdir, 'changelog.txt'), 'w')
+        fobj = open(os.path.join(self.workdir, 'changelog.txt'), 'w')
         for part in parts:
             fobj.write(part)
             self.logger.debug("%s", part)
@@ -1277,7 +1278,7 @@ failed to apply.
             fname = os.path.join(self.checkout, data['file'])
         else:
             fname = self.find_spec()
-        fobj = file(fname, 'r')
+        fobj = open(fname, 'r')
         text = fobj.read()
         fobj.close()
         count = int(data.get('count', '0'))
@@ -1285,7 +1286,7 @@ failed to apply.
             text = re.sub(data['match'], data['replace'], text, count)
         else:
             text = re.sub(data['match'], data['replace'], text)
-        fobj = file(fname, 'w')
+        fobj = open(fname, 'w')
         fobj.write(text)
         fobj.close()
 
@@ -1302,13 +1303,13 @@ failed to apply.
             if isinstance(current_data, list):
                 gen = enumerate(current_data)
             elif isinstance(current_data, dict):
-                gen = current_data.items()
+                gen = list(current_data.items())
             if gen:
                 for key, val in gen:
                     if re.match(matching_path[0], str(key)):
                         stack.append((val, current_data, key, matching_path[1:]))
 
-            if isinstance(current_data, basestring):
+            if isinstance(current_data, six.string_types):
                 replaced = re.sub(matching_path[0],
                                   data['replace'],
                                   current_data)
@@ -1327,7 +1328,7 @@ failed to apply.
         else:
             fname = self.find_spec()
         self.logger.info('Applying regex substitutions to %s', fname)
-        fobj = file(fname, 'r')
+        fobj = open(fname, 'r')
         lines = fobj.readlines()
         fobj.close()
         prog = re.compile(data['match'])
@@ -1351,7 +1352,7 @@ failed to apply.
         else:
             self.logger.error('No matches for pattern %r', prog.pattern)
         # write it back out
-        fobj = file(fname, 'w')
+        fobj = open(fname, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1374,7 +1375,7 @@ failed to apply.
         patchstrip = int(data.get('strip', '1'))
         self.logger.debug("Adding patch: %r", data)
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
         # find highest patch number and last patch line location
@@ -1396,7 +1397,7 @@ failed to apply.
                 # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if patchnum == pnum:
                     self.logger.error("Patch %s already present: %s", patchnum, line)
-                    raise SanityError, "Duplicate patch number"
+                    raise SanityError("Duplicate patch number")
             elif alt_re.search(line):
                 l_alt = lineno
         if patchnum == -1:
@@ -1435,7 +1436,7 @@ failed to apply.
                 lines.insert(lnum + 1, entry)
                 self.logger.debug("Inserting spec line: %i: %s", lnum+1, entry)
             else:
-                raise SanityError, "Unable to apply patch %s" % patchname
+                raise SanityError("Unable to apply patch %s" % patchname)
         elif data.get('apply', 'y').lower() in ('y', 'yes', '1', 'true'):
             entry = "%%patch%d -p%d\n" % (patchnum, patchstrip)
             apply_re = re.compile(r'^\s*%patch\d+\s+-p\d')
@@ -1463,10 +1464,10 @@ failed to apply.
                 lines.insert(lsetup + 1, entry)
                 self.logger.debug("Inserting spec line: %i: %s", lsetup+1, entry)
             else:
-                raise SanityError, "Unable to apply patch %s" % patchname
+                raise SanityError("Unable to apply patch %s" % patchname)
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1493,10 +1494,10 @@ failed to apply.
             patch_re = re.compile(r'^\s*[pP]atch(' + str(patchnum) + r'):\s+(\S+?)\s*$')
         else:
             self.logger.error('No patch specified for removal')
-            raise SanityError, 'Invalid rule'
+            raise SanityError('Invalid rule')
 
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
 
@@ -1510,7 +1511,7 @@ failed to apply.
                 break
         else:
             self.logger.error("No match for pattern: %r", patch_re.pattern)
-            raise SanityError, "Could not find patch to remove"
+            raise SanityError("Could not find patch to remove")
         # remove the matching line
         if lineno:
             del lines[lineno]
@@ -1531,10 +1532,10 @@ failed to apply.
                 self.logger.warning('Patch %s appears to be applied by %%autosetup', patchname)
             else:
                 self.logger.error('No %%patch line for patch %s', patchname)
-                raise SanityError, "Unable to remove patch"
+                raise SanityError("Unable to remove patch")
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1549,7 +1550,7 @@ failed to apply.
         #XXX support del?
         else:
             self.logger.error('Unknown source rule method: %s', method)
-            raise ConfigError, 'Invalid method in source rule'
+            raise ConfigError('Invalid method in source rule')
 
     def handle_add_source(self, data):
         """Add a source entry in spec file"""
@@ -1558,7 +1559,7 @@ failed to apply.
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
 
@@ -1576,7 +1577,7 @@ failed to apply.
                 # http://www.rpm.org/max-rpm/s1-rpm-inside-tags.html
                 if sourcenum == snum:
                     self.logger.error("Source %s already present: %s", sourcenum, line)
-                    raise SanityError, "Duplicate source number"
+                    raise SanityError("Duplicate source number")
             elif name_re.search(line):
                 lname = lineno
         if sourcenum == -1:
@@ -1596,7 +1597,7 @@ failed to apply.
         self.copy_new_source(sourcefile)
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1606,7 +1607,7 @@ failed to apply.
         sourcefile = os.path.join(self.options.config['rulesdir'], data['source'])
         sourcename = os.path.basename(sourcefile)
         specfile = self.find_spec()
-        fobj = file(specfile, 'r')
+        fobj = open(specfile, 'r')
         lines = fobj.readlines()
         fobj.close()
 
@@ -1626,7 +1627,7 @@ failed to apply.
                 break
         else:
             self.logger.error('Could not find source, no match for %r', source_re.pattern)
-            raise SanityError, 'No such source'
+            raise SanityError('No such source')
         # ... and replace it
         entry = "%s%s\n" % (head, sourcename)
         lines[lnum] = entry
@@ -1637,7 +1638,7 @@ failed to apply.
         #TODO - option to remove old
 
         # write it back out
-        fobj = file(specfile, 'w')
+        fobj = open(specfile, 'w')
         fobj.writelines(lines)
         fobj.close()
 
@@ -1646,7 +1647,7 @@ failed to apply.
         fname = data['script']
         script = os.path.join(self.options.config['rulesdir'], fname)
         if not os.path.isfile(script):
-            raise ConfigError, 'Script missing: %s' % script
+            raise ConfigError('Script missing: %s' % script)
 
         cmd = [script, self.checkout, self.find_spec()]
         self.log_cmd(cmd, cwd=self.checkout)
@@ -1698,9 +1699,9 @@ class Pusher(BaseProcessor):
         self.checkout = os.path.join(self.workdir, "checkout")
         self.logger.info('Checking working directory: %s', dirname)
         if os.path.islink(dirname):
-            raise SanityError, "%s is a symlink" % dirname
+            raise SanityError("%s is a symlink" % dirname)
         if not os.path.isdir(dirname):
-            raise SanityError, "Not staged. No such directory: %s" % dirname
+            raise SanityError("Not staged. No such directory: %s" % dirname)
         state = self.get_state()
         if state == 'UNTAGGED':
             if self.options.config['push_tags']:
@@ -1713,7 +1714,7 @@ class Pusher(BaseProcessor):
             self.logger.warn('Already pushed')
             return state
         if state != 'STAGED':
-            raise SanityError, "Staging incomplete"
+            raise SanityError("Staging incomplete")
         return state
 
     def add_changelog(self):
@@ -1730,7 +1731,7 @@ class Pusher(BaseProcessor):
         self.log_cmd(['git', 'checkout', stage_branch], cwd=self.checkout)
 
         # get the changelog entry
-        fobj = file(fname, 'r')
+        fobj = open(fname, 'r')
         clog = fobj.read()
         now = datetime.datetime.now().strftime('%a %b %d %Y')
         if clog.find('INSERT_DATE_HERE') == -1:
@@ -1741,7 +1742,7 @@ class Pusher(BaseProcessor):
         # insert the entry into spec
         spec = self.find_spec()
         prog = re.compile(r'^(\s*%changelog.*)$', re.MULTILINE)
-        inf = file(spec, 'r')
+        inf = open(spec, 'r')
         parts = prog.split(inf.read())
         inf.close()
         if len(parts) == 1:
@@ -1749,8 +1750,8 @@ class Pusher(BaseProcessor):
             return
         elif len(parts) == 2:
             # should not be possible
-            raise SanityError, 'Unable to split changelog from spec'
-        outf = file(spec, 'w')
+            raise SanityError('Unable to split changelog from spec')
+        outf = open(spec, 'w')
         for part in parts[:2]:
             outf.write(part)
         outf.write('\n')
@@ -1859,7 +1860,7 @@ class Pusher(BaseProcessor):
                 cmd = ['git', 'diff', '--cached', '--name-only']
                 output, _ = self.get_output(cmd, cwd=self.checkout, stderr='keep', fatal=False)
                 if not output:
-                    raise SanityError, "Debranding commits resulted in no changes?"
+                    raise SanityError("Debranding commits resulted in no changes?")
                 #commit
                 cmd = self.git_base_cmd()
                 cmd.extend(['commit', '-m', 'debrand %s' % self.nvr])
@@ -1922,7 +1923,7 @@ class Pusher(BaseProcessor):
 
 
     def push_lookaside(self):
-        meta = file(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
+        meta = open(os.path.join(self.checkout, ".%s.metadata" % self.package), 'r')
         for line in meta.readlines():
             line = line.strip()
             digest, _ = line.split(None, 1)
@@ -1973,7 +1974,7 @@ def explode_srpm(srpm, destdir=None, logfile=None):
     if header[rpm.RPMTAG_SOURCEPACKAGE] != 1:
         # we checked this earlier, but since we're about to rpm -i it,
         # let's check again
-        raise SanityError, "%s is not a source package" % srpm
+        raise SanityError("%s is not a source package" % srpm)
     if destdir is None:
         destdir = os.getcwd()
     else:
@@ -1988,7 +1989,7 @@ def explode_srpm(srpm, destdir=None, logfile=None):
     proc = subprocess.Popen(cmd, **popts)
     ret = proc.wait()
     if ret:
-        raise CommandError, "command failed: %r" % cmd
+        raise CommandError("command failed: %r" % cmd)
 
 
 def wipe_git_dir(dirname):
@@ -2003,7 +2004,7 @@ def wipe_git_dir(dirname):
 
 
 def die(msg):
-    print msg
+    self.logger.error(msg)
     sys.exit(1)
 
 

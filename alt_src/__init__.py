@@ -1,1 +1,1 @@
-from alt_src import *
+from .alt_src import *

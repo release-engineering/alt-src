@@ -8,12 +8,7 @@ from hamcrest import assert_that, not_, contains_string, equal_to
 import pytest
 import yaml
 
-
-# ensure python2 before attempting to import sources
-if sys.version_info < (3, 0):
-    from alt_src.alt_src import Stager
-
-xfail = pytest.mark.xfail(sys.version_info >= (3, 0), reason='Incompatible with python3')
+from alt_src.alt_src import Stager
 
 TESTS_PATH = os.path.dirname(__file__)
 MODULES_PATH = os.path.join(TESTS_PATH, 'data', 'module_source')
@@ -294,7 +289,6 @@ def spec_file(request, checkout_dir):
     yield fname
 
 
-@xfail(strict=True)
 @pytest.fixture
 def stager_setup(request, read_source, rule_cfg, options, checkout_dir,
                  spec_file, work_dir, rules_dir):
@@ -323,7 +317,6 @@ def stager_setup_mmd_params(modname, branch, rule_cfg):
             {'fname': modname})
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize(
     'stager_setup,options,rule_cfg,spec_file,expected',
     [stager_setup_params('foo-package', 'test-b', spec_rule_config) +
@@ -349,7 +342,6 @@ def test_rule_spec(stager_setup, expected):
     assert stager.log_cmd.mock_calls[0] == call(expected_cmd, cwd=stager.checkout)
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize(
     'stager_setup,options,rule_cfg,spec_file,expected',
     [stager_setup_params('foo-package', 'test-b', re_rule_config) +
@@ -375,7 +367,6 @@ def test_rule_re(stager_setup, expected):
             print(spec_words)
             assert spec_words.count(word) == count
 
-@xfail(strict=True)
 @pytest.mark.parametrize('stager_setup,options,rule_cfg,spec_file,expected',
                          [stager_setup_params('foo-package', 'test-b', patch_rule_config_add) +
                           (contains_string('Patch2: foo.patch'),),
@@ -401,7 +392,6 @@ def test_rule_patch(stager_setup, expected):
             assert_that(spec, expected)
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize(
     'stager_setup,options,rule_cfg,spec_file,expected',
     [stager_setup_params('foo-package', 'test-b', source_rule_config_add) +
@@ -428,7 +418,6 @@ def test_rule_source(stager_setup, expected):
             assert_that(spec, expected)
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('stager_setup,options,rule_cfg,spec_file,expected',
                          [stager_setup_params('foo-package', 'test-b', script_rule_config) +
                           (("{rules_dir}/some-script {checkout_dir} {spec_file}",),),
@@ -449,7 +438,6 @@ def test_rule_script(stager_setup, expected):
             expected_cmd.append(e)
     assert stager.log_cmd.mock_calls[0] == call(expected_cmd, cwd=stager.checkout)
 
-@xfail(strict=True)
 @pytest.mark.parametrize('stager_setup,options,rule_cfg,spec_file,expected',
                          [stager_setup_mmd_params('postgresql', 'test-b', mmd_rule_config) +
                           (contains_string('ref: stream-centos-9.6'),),
@@ -473,7 +461,6 @@ def test_rule_mmd(stager_setup, expected):
         assert_that(mmd, expected)
 
 
-@xfail(strict=True)
 @pytest.mark.parametrize('stager_setup,options,rule_cfg,spec_file',
                          [stager_setup_mmd_params('postgresql', 'test-b', mmd_rule_config2)],
                          ids=['mmd-replace-no-change'],

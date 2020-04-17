@@ -1,7 +1,6 @@
 mock
 PyHamcrest
 configparser
-six > 1.10
 
 # koji 1.20 doesn't include it
 # as dependency
