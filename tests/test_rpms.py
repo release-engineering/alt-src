@@ -576,7 +576,7 @@ def test_log_cmd_with_retries(capsys):
     logger.addHandler(handler)
 
     with patch('time.sleep') as mocked_sleep:
-        with patch('subprocess.Popen.wait', side_effect=[1,1,1,0]) as mocked_wait:
+        with patch('subprocess.Popen.wait', side_effect=[3,2,1,0]) as mocked_wait:
             assert_that(calling(processor.log_cmd).with_args(['echo', 'hello'], tries=4), exits(0))
             assert len(mocked_wait.mock_calls) == 4
             assert mocked_sleep.call_args_list == [call(30), call(60), call(90)]
@@ -584,8 +584,11 @@ def test_log_cmd_with_retries(capsys):
     out, err = capsys.readouterr()
 
     # should fail three times and succeed in the forth time
-    expected = '[WARNING]  Command echo hello failed, will retry in 90s [tried: 3/4]'
-    assert expected in err
+    expected = \
+        ('[WARNING]  Command echo hello failed, exit code: 3. Will retry in 30s [tried: 1/4]\n'
+         '[WARNING]  Command echo hello failed, exit code: 2. Will retry in 60s [tried: 2/4]\n'
+         '[WARNING]  Command echo hello failed, exit code: 1. Will retry in 90s [tried: 3/4]\n')
+    assert expected == err
 
 
 @pytest.mark.parametrize('cmd, expected', [(['git', 'clone', 'some_git_url'], 4),

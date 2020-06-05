@@ -239,6 +239,8 @@ class BaseProcessor(object):
             kwargs.setdefault('stderr', subprocess.STDOUT)
             kwargs.setdefault('close_fds', True)
 
+        fmt_command = 'Command %s failed, exit code: %s.'
+        fmt_retries = 'Will retry in %ss [tried: %s/%s]'
         for i in range(1, tries+1):
             proc = subprocess.Popen(cmd, **kwargs)
             ret = proc.wait()
@@ -246,14 +248,14 @@ class BaseProcessor(object):
                 return ret
             elif ret and i < tries:
                 sleep_time = i * 30
-                fmt = ' Command %s failed, will retry in %ss [tried: %s/%s]'
-                self.logger.warn(fmt, ' '.join(cmd), sleep_time, i, tries)
+                self.logger.warn(' '.join([fmt_command, fmt_retries]),
+                                 ' '.join(cmd), ret, sleep_time, i, tries)
                 time.sleep(sleep_time)
         if ret:
             if fatal:
-                raise CommandError("command failed: %r" % cmd)
+                raise CommandError(fmt_command % (' '.join(cmd), ret))
             #otherwise
-            self.logger.warn("Command failed: %r", cmd)
+            self.logger.warn(fmt_command, ' '.join(cmd), ret)
         return ret
 
     def get_output(self, cmd, fatal=True, **kwargs):
