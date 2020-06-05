@@ -246,7 +246,7 @@ class BaseProcessor(object):
             ret = proc.wait()
             if not ret:
                 return ret
-            elif ret and i < tries:
+            elif ret and i < tries+1:
                 sleep_time = i * 30
                 self.logger.warn(' '.join([fmt_command, fmt_retries]),
                                  ' '.join(cmd), ret, sleep_time, i, tries)
