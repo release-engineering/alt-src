@@ -567,6 +567,9 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
 def test_log_cmd_with_retries(capsys):
 
     mock_options = MagicMock(koji=False)
+    remove_handlers()
+    capsys.readouterr()
+
     with patch('os.path.isfile', return_value=True):
         processor = BaseProcessor(mock_options)
     logger = logging.getLogger('altsrc')
@@ -582,13 +585,13 @@ def test_log_cmd_with_retries(capsys):
             assert mocked_sleep.call_args_list == [call(30), call(60), call(90)]
 
     out, err = capsys.readouterr()
-
     # should fail three times and succeed in the forth time
     expected = \
-        ('[WARNING]  Command echo hello failed, exit code: 3. Will retry in 30s [tried: 1/4]\n'
-         '[WARNING]  Command echo hello failed, exit code: 2. Will retry in 60s [tried: 2/4]\n'
-         '[WARNING]  Command echo hello failed, exit code: 1. Will retry in 90s [tried: 3/4]\n')
-    assert expected == err
+        ['[WARNING] Command echo hello failed, exit code: 3. Will retry in 30s [tried: 1/4]',
+         '[WARNING] Command echo hello failed, exit code: 2. Will retry in 60s [tried: 2/4]',
+         '[WARNING] Command echo hello failed, exit code: 1. Will retry in 90s [tried: 3/4]']
+    for expected_item in expected:
+        assert expected_item in err
 
 
 @pytest.mark.parametrize('cmd, expected', [(['git', 'clone', 'some_git_url'], 4),
