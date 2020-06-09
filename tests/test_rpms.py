@@ -565,8 +565,11 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
 
 
 def test_log_cmd_with_retries(capsys):
+    remove_handlers()
+    capsys.readouterr()
 
     mock_options = MagicMock(koji=False)
+
     with patch('os.path.isfile', return_value=True):
         processor = BaseProcessor(mock_options)
     logger = logging.getLogger('altsrc')
@@ -576,16 +579,61 @@ def test_log_cmd_with_retries(capsys):
     logger.addHandler(handler)
 
     with patch('time.sleep') as mocked_sleep:
-        with patch('subprocess.Popen.wait', side_effect=[1,1,1,0]) as mocked_wait:
+        with patch('subprocess.Popen.wait', side_effect=[3,2,1,0]) as mocked_wait:
             assert_that(calling(processor.log_cmd).with_args(['echo', 'hello'], tries=4), exits(0))
             assert len(mocked_wait.mock_calls) == 4
             assert mocked_sleep.call_args_list == [call(30), call(60), call(90)]
 
     out, err = capsys.readouterr()
-
     # should fail three times and succeed in the forth time
-    expected = '[WARNING]  Command echo hello failed, will retry in 90s [tried: 3/4]'
-    assert expected in err
+    expected = \
+        ['[WARNING] Command echo hello failed, exit code: 3. Will retry in 30s [tried: 1/4]',
+         '[WARNING] Command echo hello failed, exit code: 2. Will retry in 60s [tried: 2/4]',
+         '[WARNING] Command echo hello failed, exit code: 1. Will retry in 90s [tried: 3/4]']
+
+    for expected_item in expected:
+        assert expected_item in err
+
+
+@pytest.mark.parametrize('fatal', [True, False])
+def test_log_cmd_with_retries_failure(capsys, fatal):
+    remove_handlers()
+    capsys.readouterr()
+
+    mock_options = MagicMock(koji=False)
+    with patch('os.path.isfile', return_value=True):
+        processor = BaseProcessor(mock_options)
+
+    logger = logging.getLogger('altsrc')
+    handler = logging.StreamHandler()
+    handler.setLevel('DEBUG')
+    handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    logger.addHandler(handler)
+
+    with patch('time.sleep') as mocked_sleep:
+        with patch('subprocess.Popen.wait', side_effect=lambda: 1) as mocked_wait:
+            if fatal:
+                assert_that(calling(processor.log_cmd).with_args(['echo', 'hello'], fatal=fatal,
+                                                                 tries=4),
+                            raises(CommandError))
+            else:
+                assert_that(calling(processor.log_cmd).with_args(['echo', 'hello'], fatal=fatal,
+                                                                 tries=4),
+                            exits(0))
+
+            assert len(mocked_wait.mock_calls) == 4
+            assert mocked_sleep.call_args_list == [call(30), call(60), call(90), call(120)]
+
+    out, err = capsys.readouterr()
+    # should fail four times
+    expected = \
+        ['[WARNING] Command echo hello failed, exit code: 1. Will retry in 30s [tried: 1/4]',
+         '[WARNING] Command echo hello failed, exit code: 1. Will retry in 60s [tried: 2/4]',
+         '[WARNING] Command echo hello failed, exit code: 1. Will retry in 90s [tried: 3/4]',
+         '[WARNING] Command echo hello failed, exit code: 1. Will retry in 120s [tried: 4/4]']
+
+    for expected_item in expected:
+        assert expected_item in err
 
 
 @pytest.mark.parametrize('cmd, expected', [(['git', 'clone', 'some_git_url'], 4),
