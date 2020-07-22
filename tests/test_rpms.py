@@ -38,9 +38,8 @@ def tempdir():
     shutil.rmtree(path)
 
 
-@pytest.fixture
 def rulesdir():
-    """Yields path to rules directory used within tests.
+    """Returns path to rules directory used within tests.
 
     Uses tests/data/rules by default, but ALTSRC_TEST_RULESDIR can be
     set to test against a different path."""
