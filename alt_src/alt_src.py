@@ -17,7 +17,7 @@ import re
 import shutil
 import simplejson as json
 import six
-from six.moves import configparser
+from six.moves import configparser, shlex_quote
 from six.moves import cStringIO as StringIO
 from six.moves.urllib.parse import urlencode
 from six.moves.urllib.request import Request, urlopen
@@ -1971,17 +1971,33 @@ def acquire_lock(lock_file_path, wait_time, sleep_interval, logger):
 
 
 def explode_srpm(srpm, destdir=None, logfile=None):
-    # explode our srpm to the given directory
+    # explode our srpm to the given directory using the best possible means:
+    # - by installing the RPM
+    # - or falling back to rpm2cpio
+
     header = koji.get_rpm_header(srpm)
     if header[rpm.RPMTAG_SOURCEPACKAGE] != 1:
         # we checked this earlier, but since we're about to rpm -i it,
         # let's check again
         raise SanityError("%s is not a source package" % srpm)
+
     if destdir is None:
         destdir = os.getcwd()
     else:
         destdir = os.path.abspath(destdir)
         koji.ensuredir(destdir)
+
+    try:
+        return explode_srpm_install(srpm, destdir, logfile)
+    except CommandError:
+        logging.getLogger("altsrc").exception("Could not install SRPM, trying rpm2cpio")
+
+    return explode_srpm_cpio(srpm, header, destdir, logfile)
+
+
+def explode_srpm_install(srpm, destdir=None, logfile=None):
+    # explode our srpm to the given directory by installing it
+
     cmd = ['rpm', '--nosignature', '-i', '--define', '_topdir %s' % destdir, srpm]
     #print "Running: %r" % cmd
     popts = {'close_fds':True}
@@ -1992,6 +2008,82 @@ def explode_srpm(srpm, destdir=None, logfile=None):
     ret = proc.wait()
     if ret:
         raise CommandError("command failed: %r" % cmd)
+
+
+
+def explode_srpm_cpio(srpm, header, destdir=None, logfile=None):
+    # explode our srpm to the given directory by extracting with rpm2cpio
+
+    popts = {'close_fds': True}
+    if logfile:
+        popts['stdout'] = logfile
+        popts['stderr'] = subprocess.STDOUT
+
+    cmd = (
+        'set -o pipefail; '
+        'rpm2cpio %s | '
+        'cpio --extract --make-directories --preserve-modification-time --unconditional'
+    ) % shlex_quote(os.path.abspath(srpm))
+
+    # Note: /bin/sh is not guaranteed to understand "pipefail", hence explicit
+    # usage of bash
+    proc = subprocess.Popen(['/bin/bash', '-c', cmd], cwd=destdir, **popts)
+
+    ret = proc.wait()
+    if ret:
+        raise CommandError("command failed: %r" % cmd)
+
+    # As we did not install the RPM, usual SPECS/SOURCES redirections hardcoded into
+    # RPM for installing SRPMS didn't happen; we need to do this ourselves.
+    relocate_sources(header, destdir)
+
+
+def spec_from_headers(headers):
+    """Given RPM headers, decide which file is the RPM's .spec file.
+
+    See also headerFindSpec in RPM.
+    """
+    fileinfo = zip(headers[rpm.RPMTAG_BASENAMES], headers[rpm.RPMTAG_FILEFLAGS])
+
+    # RPM can produce strs or bytes depending on version, make it consistent
+    fileinfo = [(six.ensure_text(basename), flags)
+                for (basename, flags) in fileinfo]
+
+    for (basename, flags) in fileinfo:
+        if flags & rpm.RPMFILE_SPECFILE:
+            return basename
+
+    # If no explicitly marked spec file, we use the first one with
+    # matching filename.
+    for (basename, _) in fileinfo:
+        if basename.endswith('.spec'):
+            return basename
+
+
+def relocate_sources(headers, dir):
+    """Relocate SRPM files from rpm2cpio into the structure typically
+    used by RPM (i.e. 'SOURCES' and 'SPECS' directories).
+
+    See also rpmRelocateSrpmFileList in RPM.
+    """
+    specdir = os.path.join(dir, 'SPECS')
+    sourcedir = os.path.join(dir, 'SOURCES')
+    koji.ensuredir(specdir)
+    koji.ensuredir(sourcedir)
+
+    specfile = spec_from_headers(headers)
+
+    for basename in headers[rpm.RPMTAG_BASENAMES]:
+        # note rpm may give bytes or strs depending on version
+        basename = six.ensure_text(basename)
+
+        # Every file goes into either SPECS or SOURCES.
+        src = os.path.join(dir, basename)
+        if basename == specfile:
+            destdir = specdir
+        else:
+            destdir = sourcedir
+        os.rename(src, os.path.join(destdir, basename))
 
 
 def wipe_git_dir(dirname):
