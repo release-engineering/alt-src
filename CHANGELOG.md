@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - n/a
 
+## [1.4.1] - 2020-07-29
+
+### Fixed
+- Fixed a crash introduced in 1.4.0 when alt-src is used with older versions of
+  the `six` package, as available in RHEL6.
+
 ## [1.4.0] - 2020-07-27
 
 ### Added
@@ -43,7 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release to PyPI
 
-[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/release-engineering/alt-src/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/release-engineering/alt-src/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/release-engineering/alt-src/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/release-engineering/alt-src/compare/v1.1.0...v1.2.0
