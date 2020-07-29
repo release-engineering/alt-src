@@ -70,6 +70,10 @@ CONFIG_DEFAULTS = {
 CONFIG_INT_OPTS = set([])
 CONFIG_BOOL_OPTS = set(['smtp_enabled', 'push_tags', 'debrand'])
 
+# Workaround for missing constant in rpm-python < 4.12.0
+# (see rpm commit 2dbfc7834d1d1ee945ee820)
+RPMFILE_SPECFILE = (1 << 5)
+
 
 def maybe_decode(x):
     """If x is not a str, return it decoded. Otherwise, return x.
@@ -2063,7 +2067,7 @@ def spec_from_headers(headers):
                 for (basename, flags) in fileinfo]
 
     for (basename, flags) in fileinfo:
-        if flags & rpm.RPMFILE_SPECFILE:
+        if flags & RPMFILE_SPECFILE:
             return basename
 
     # If no explicitly marked spec file, we use the first one with
