@@ -71,6 +71,19 @@ CONFIG_INT_OPTS = set([])
 CONFIG_BOOL_OPTS = set(['smtp_enabled', 'push_tags', 'debrand'])
 
 
+def maybe_decode(x):
+    """If x is not a str, return it decoded. Otherwise, return x.
+
+    This helper is to cope with rpm-python's behavior of returning either
+    bytes or strs depending on the library version.
+    """
+    if not isinstance(x, str):
+        # coverage is collected on python2 and this line will never
+        # be hit there, since str and bytes are the same.
+        return x.decode()  # pragma: no cover
+    return x
+
+
 def get_config(cfile, overrides):
     if not os.access(cfile, os.F_OK):
         die("Missing config file: %s" % cfile)
@@ -2046,7 +2059,7 @@ def spec_from_headers(headers):
     fileinfo = zip(headers[rpm.RPMTAG_BASENAMES], headers[rpm.RPMTAG_FILEFLAGS])
 
     # RPM can produce strs or bytes depending on version, make it consistent
-    fileinfo = [(six.ensure_text(basename), flags)
+    fileinfo = [(maybe_decode(basename), flags)
                 for (basename, flags) in fileinfo]
 
     for (basename, flags) in fileinfo:
@@ -2075,7 +2088,7 @@ def relocate_sources(headers, dir):
 
     for basename in headers[rpm.RPMTAG_BASENAMES]:
         # note rpm may give bytes or strs depending on version
-        basename = six.ensure_text(basename)
+        basename = maybe_decode(basename)
 
         # Every file goes into either SPECS or SOURCES.
         src = os.path.join(dir, basename)
