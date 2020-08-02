@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - n/a
 
+## [1.4.2] - 2020-08-03
+
+### Fixed
+- Fixed a crash introduced in 1.4.0 when alt-src is used with rpm-python versions
+  older than 4.12.0.
+
 ## [1.4.1] - 2020-07-29
 
 ### Fixed
@@ -49,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release to PyPI
 
-[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/release-engineering/alt-src/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/release-engineering/alt-src/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/release-engineering/alt-src/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/release-engineering/alt-src/compare/v1.2.0...v1.3.0
