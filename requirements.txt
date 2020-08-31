@@ -3,4 +3,4 @@ rpm-py-installer
 requests
 PyYAML
 simplejson
-six
+six>=1.8.0
