@@ -950,9 +950,9 @@ If you find this file in a distro specific branch, it means that no content has 
             if fname != '.git':
                 raise SanityError('Failed to clear checkout')
         sourcedir = os.path.join(dst, 'SOURCES/')
+        os.makedirs(sourcedir) # RPM sources can be empty.
         if self.mmd:
             # move module src to stage dir
-            os.makedirs(sourcedir)
             shutil.copy(self.source_file, os.path.join(sourcedir))
         else:
             # explode our srpm
