@@ -23,7 +23,7 @@ def get_long_description():
 
 setup(
       name="alt-src",
-      version="1.4.2",
+      version="1.5.0",
       packages=find_packages(exclude=["tests"]),
       url="https://github.com/release-engineering/alt-src",
       license="GNU General Public License",

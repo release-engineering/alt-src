@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - n/a
 
+## [1.5.0] - 2020-09-03
+
+### Fixed
+- Fixed handling of SRPMs which do not contain a `SOURCES` directory
+  [#27](https://github.com/release-engineering/alt-src/issues/27)
+
 ## [1.4.2] - 2020-08-03
 
 ### Fixed
@@ -55,7 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release to PyPI
 
-[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/release-engineering/alt-src/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/release-engineering/alt-src/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/release-engineering/alt-src/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/release-engineering/alt-src/compare/v1.3.0...v1.4.0
