@@ -2115,7 +2115,7 @@ def wipe_git_dir(dirname):
 
 
 def die(msg):
-    self.logger.error(msg)
+    logging.getLogger("altsrc").error(msg)
     sys.exit(1)
 
 
