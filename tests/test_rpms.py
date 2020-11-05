@@ -981,6 +981,50 @@ def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_co
     remove_handlers()
 
 
+def test_lookaside_cleanup(config_file, lookasidedir):
+    name = 'ntp'
+    rpm = 'ntp-4.2.6p5-25.el7_3.2.src.rpm'
+    branch = 'c7'
+
+    lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
+    os.makedirs(lookaside)
+
+    # lookaside is not empty initially
+    # assuming content from some previous request
+    f = tempfile.NamedTemporaryFile(dir=lookaside)
+    files = os.listdir(lookaside)
+    prev_file = files[0]
+    assert_that(files, not_(empty()))
+
+    options = ['-v',
+               '-c', config_file,
+               '--clean-lookaside',
+               branch,
+               os.path.join(RPMS_PATH, rpm)
+    ]
+    assert_that(calling(main).with_args(options), exits(0))
+
+    # lookaside cleaned and written after stage
+    # previous file is not present anymore
+    files = os.listdir(lookaside)
+    assert_that(files, not_(empty()))
+    assert prev_file not in files
+    remove_handlers()
+
+    options = ['-v',
+               '-c', config_file,
+               '--push',
+               '--clean-lookaside',
+               branch,
+               os.path.join(RPMS_PATH, rpm)
+    ]
+    assert_that(calling(main).with_args(options), exits(0))
+
+    #lookaside is empty after the push completes
+    files = os.listdir(lookaside)
+    assert_that(files, empty())
+
+
 def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
 
     rpm = 'grub2-2.02-0.64.el7.src.rpm'
