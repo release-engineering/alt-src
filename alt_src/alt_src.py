@@ -2120,8 +2120,7 @@ def die(msg):
 
 
 def setup_logging(options):
-    logger = logging.getLogger("altsrc")
-    logger.setLevel(logging.DEBUG)
+    logger = logging.getLogger()
 
     #determine log levels
     output_log_level = logging.WARN #default
@@ -2140,6 +2139,9 @@ def setup_logging(options):
     # file level should be at least as verbose as output level
     file_log_level = min(file_log_level, output_log_level)
     options.file_log_level = file_log_level
+
+    # remove the default handler of root logger
+    logger.handlers = []
 
     # set up handlers
     handler = logging.StreamHandler(sys.stdout)
@@ -2199,6 +2201,7 @@ def main(args):
     options.branch = args[0]
     options.source = args[1]
 
+    logging.basicConfig(level=logging.DEBUG)
     options.config = get_config(options.cfile, options.copts)
 
     logger = setup_logging(options)
