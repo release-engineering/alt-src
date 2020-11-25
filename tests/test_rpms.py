@@ -59,7 +59,8 @@ def pushdir(tempdir):
 
 @pytest.fixture
 def lookasidedir(tempdir):
-    return os.path.join(tempdir, 'lookaside')
+    """path where lookaside content lands post push"""
+    return os.path.join(tempdir, 'lookaside_dest')
 
 
 @pytest.fixture
@@ -177,7 +178,7 @@ data:
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
 ])
-def test_push_with_debrand(config_file, pushdir, lookasidedir,
+def test_push_with_debrand(config_file, default_config, pushdir, lookasidedir,
                            branch, name, version, release, capsys):
     """Verify that alt-src command completes without any errors and generates
     a debranding commit for the given RPM."""
@@ -205,7 +206,12 @@ def test_push_with_debrand(config_file, pushdir, lookasidedir,
         assert_that(rpm not in DEBRAND_XFAIL,
                     'RPM was expected to fail debranding, but passed')
 
-    # lookaside dir should have content
+    # lookaside cache is empty
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], name, branch)
+    files = os.listdir(lookaside_cache)
+    assert_that(files, empty())
+
+    # remote lookaside dir should have content
     lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
     files = os.listdir(lookaside)
     assert_that(files, not_(empty()))
@@ -216,8 +222,8 @@ def test_push_with_debrand(config_file, pushdir, lookasidedir,
     ('c7', 'grub2', '2.02', '0.64.el7'),
     ('c7', 'ntp', '4.2.6p5', '25.el7_3.2'),
 ])
-def test_repush_with_staged_data(config_file, pushdir, lookasidedir,
-                           branch, name, version, release, capsys):
+def test_repush_with_staged_data(config_file, default_config, pushdir, lookasidedir,
+                                 branch, name, version, release, capsys):
     """Push once, the push again. The script should warn, but not error"""
 
     rpm = '-'.join([name, version, release]) +  '.src.rpm'
@@ -257,6 +263,11 @@ def test_repush_with_staged_data(config_file, pushdir, lookasidedir,
     # It should have logged a WARNING about duplicate content
     w_expect = '[WARNING] Skipping push for duplicate content'
     assert [l for l in out_lines if w_expect in l]
+
+    # lookaside cache is empty
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], name, branch)
+    files = os.listdir(lookaside_cache)
+    assert_that(files, empty())
 
     # lookaside dir should have content
     lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
@@ -536,6 +547,11 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     with patch("alt_src.alt_src.Pusher.push_git", autospec=True, side_effect=RuntimeError):
         assert_that(calling(main).with_args(options), exits(2))
 
+    # lookaside cache has content after stage
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], 'grub2', 'c7')
+    files = os.listdir(lookaside_cache)
+    assert_that(files, not_(empty()))
+
     # before push again, we need to change the branch to some unkown branch
     # to simulate what would happen in push_git
     cmd = 'git checkout -b arandombranch'
@@ -556,6 +572,11 @@ def test_repush_with_state_staged(config_file, pushdir, lookasidedir, default_co
     expected = '[WARNING] Already successfully staged: \
 %s/c7/rpms/g/grub2/grub2-2.02-0.64.el7' % default_config['stagedir']
     assert [l for l in out_lines if expected in l]
+
+    # lookaside cache is empty after push completes
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], 'grub2', 'c7')
+    files = os.listdir(lookaside_cache)
+    assert_that(files, empty())
 
     # lookaside dir should have content
     lookaside = '%s/%s/%s' % (lookasidedir, 'grub2', 'c7')
@@ -738,7 +759,7 @@ def test_acquire_release_lock(tempdir):
     remove_handlers()
 
 
-def test_stage_only(config_file, pushdir, capsys):
+def test_stage_only(config_file, default_config, pushdir, capsys):
     """
     test a task without push option
     """
@@ -756,6 +777,11 @@ def test_stage_only(config_file, pushdir, capsys):
     assert_that(len(err), equal_to(0))
     files = os.listdir(pushdir)
     assert_that(files, empty())
+
+    #lookaside cache has content
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], 'grub2', 'c7')
+    files = os.listdir(lookaside_cache)
+    assert_that(files, not_(empty()))
     remove_handlers()
 
 
@@ -981,48 +1007,62 @@ def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_co
     remove_handlers()
 
 
-def test_lookaside_cleanup(config_file, lookasidedir):
+def test_initial_lookaside_cleanup(config_file, default_config):
+    """Files present previously in the lookaside cache is cleared."""
     name = 'ntp'
     rpm = 'ntp-4.2.6p5-25.el7_3.2.src.rpm'
     branch = 'c7'
 
-    lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
-    os.makedirs(lookaside)
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], name, branch)
+    os.makedirs(lookaside_cache)
 
     # lookaside is not empty initially
     # assuming content from some previous request
-    f = tempfile.NamedTemporaryFile(dir=lookaside)
-    files = os.listdir(lookaside)
+    f = tempfile.NamedTemporaryFile(dir=lookaside_cache)
+    files = os.listdir(lookaside_cache)
     prev_file = files[0]
     assert_that(files, not_(empty()))
 
     options = ['-v',
                '-c', config_file,
-               '--clean-lookaside',
                branch,
                os.path.join(RPMS_PATH, rpm)
     ]
     assert_that(calling(main).with_args(options), exits(0))
 
-    # lookaside cleaned and written after stage
-    # previous file is not present anymore
-    files = os.listdir(lookaside)
+    # lookaside cache has files after staging
+    # but files from the previous push were cleared
+    files = os.listdir(lookaside_cache)
     assert_that(files, not_(empty()))
     assert prev_file not in files
     remove_handlers()
 
+
+def test_keep_lookaside(config_file, lookasidedir, default_config):
+    """Files in lookaside cache are not cleared once the push completes
+       when using keep-lookaside option."""
+    name = 'ntp'
+    rpm = 'ntp-4.2.6p5-25.el7_3.2.src.rpm'
+    branch = 'c7'
+
     options = ['-v',
                '-c', config_file,
                '--push',
-               '--clean-lookaside',
+               '--keep-lookaside',
                branch,
                os.path.join(RPMS_PATH, rpm)
     ]
     assert_that(calling(main).with_args(options), exits(0))
 
-    #lookaside is empty after the push completes
-    files = os.listdir(lookaside)
-    assert_that(files, empty())
+    #lookaside cache has files after the push completes
+    lookaside_cache = '%s/%s/%s' % (default_config['lookaside'], name, branch)
+    files = os.listdir(lookaside_cache)
+    assert_that(files, not_(empty()))
+
+    #lookaside destination has files
+    lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
+    remote_files = os.listdir(lookaside)
+    assert_that(remote_files, not_(empty()))
 
 
 def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):

@@ -663,11 +663,12 @@ Staging failed for %(nvr)s.
         self.log_cmd(cmd, cwd=self.checkout)
 
     def clean_lookaside_cache(self):
-        if self.options.clean_lookaside:
+        if not self.options.keep_lookaside:
             lookaside_path = os.path.join(self.options.config['lookaside'],
-                                          self.package, self.options.branch)
-            self.logger.warning("Cleaning lookaside cache: %s", lookaside_path)
-            wipe_dir(lookaside_path)
+                                            self.package, self.options.branch)
+            if os.path.exists(lookaside_path):
+                self.logger.warning("Cleaning lookaside cache: %s", lookaside_path)
+                wipe_dir(lookaside_path)
 
 class Stager(BaseProcessor):
     MMD_DEBRAND_RTYPES = [
@@ -2205,8 +2206,8 @@ def main(args):
                       help=_("keep lookaside sources in staging checkout"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
                       help=_("set config option"))
-    parser.add_option("--clean-lookaside", action="store_true", default=False,
-                      help=_("clean sources in staging lookaside cache"))
+    parser.add_option("--keep-lookaside", action="store_true", default=False,
+                      help=_("keep sources in staging lookaside cache"))
     (options, args) = parser.parse_args(args)
 
     options.branch = args[0]
