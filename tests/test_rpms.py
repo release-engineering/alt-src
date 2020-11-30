@@ -1038,7 +1038,7 @@ def test_initial_lookaside_cleanup(config_file, default_config):
     remove_handlers()
 
 
-def test_keep_lookaside(config_file, lookasidedir, default_config):
+def test_keep_lookaside(config_file, lookasidedir, default_config, capsys):
     """Files in lookaside cache are not cleared once the push completes
        when using keep-lookaside option."""
     name = 'ntp'
@@ -1047,11 +1047,19 @@ def test_keep_lookaside(config_file, lookasidedir, default_config):
 
     options = ['-v',
                '-c', config_file,
-               '--push',
                '--keep-lookaside',
                branch,
                os.path.join(RPMS_PATH, rpm)
     ]
+    assert_that(calling(main).with_args(options), exits(0))
+
+    #restaging skips copying to lookaside if files already exist
+    options.append("--restage")
+    assert_that(calling(main).with_args(options), exits(0))
+    out, _ = capsys.readouterr()
+    assert "Skipping source, already in digest" in out
+
+    options.append("--push")
     assert_that(calling(main).with_args(options), exits(0))
 
     #lookaside cache has files after the push completes
@@ -1063,6 +1071,7 @@ def test_keep_lookaside(config_file, lookasidedir, default_config):
     lookaside = '%s/%s/%s' % (lookasidedir, name, branch)
     remote_files = os.listdir(lookaside)
     assert_that(remote_files, not_(empty()))
+    remove_handlers()
 
 
 def test_push_to_pagure(config_file, key_file, pushdir, lookasidedir, capsys):
