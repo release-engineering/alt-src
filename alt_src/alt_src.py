@@ -662,6 +662,13 @@ Staging failed for %(nvr)s.
         cmd.extend(['tag', '-d', tag])
         self.log_cmd(cmd, cwd=self.checkout)
 
+    def clean_lookaside_cache(self):
+        if not self.options.keep_lookaside:
+            lookaside_path = os.path.join(self.options.config['lookaside'],
+                                            self.package, self.options.branch)
+            if os.path.exists(lookaside_path):
+                self.logger.warning("Cleaning lookaside cache: %s", lookaside_path)
+                wipe_dir(lookaside_path)
 
 class Stager(BaseProcessor):
     MMD_DEBRAND_RTYPES = [
@@ -942,7 +949,7 @@ If you find this file in a distro specific branch, it means that no content has 
         """Import our source srpm/modulemd on the specified branch"""
         # clear our checkout dir
         dst = self.checkout
-        wipe_git_dir(dst)
+        wipe_dir(dst, git=True)
         # confirm that the directory is wiped, because in the duplicate check
         # below, we want to be sure that the duplicate content really came
         # from our exploded srpm
@@ -966,6 +973,10 @@ If you find this file in a distro specific branch, it means that no content has 
             if self.for_lookaside(path):
                 to_move.append(fname)
         to_move.sort()
+
+        # clean lookaside cache
+        if to_move:
+            self.clean_lookaside_cache()
 
         # move files to lookaside
         meta = open(os.path.join(dst, ".%s.metadata" % self.package), 'w')
@@ -1712,6 +1723,7 @@ class Pusher(BaseProcessor):
         self.push_git(state)
         self.set_state('PUSHED')
         self.notify()
+        self.clean_lookaside_cache()
 
     def check_workdir(self):
         self.workdir = dirname = self.get_workdir()
@@ -2103,9 +2115,9 @@ def relocate_sources(headers, dir):
         os.rename(src, os.path.join(destdir, basename))
 
 
-def wipe_git_dir(dirname):
+def wipe_dir(dirname, git=False):
     for fname in os.listdir(dirname):
-        if fname == '.git':
+        if git and fname == '.git':
             continue
         path = os.path.join(dirname, fname)
         if os.path.isdir(path):
@@ -2196,6 +2208,8 @@ def main(args):
                       help=_("keep lookaside sources in staging checkout"))
     parser.add_option("-o", "--option", dest="copts", action="append", metavar="OPT=VALUE",
                       help=_("set config option"))
+    parser.add_option("--keep-lookaside", action="store_true", default=False,
+                      help=_("keep sources in staging lookaside cache"))
     (options, args) = parser.parse_args(args)
 
     options.branch = args[0]
