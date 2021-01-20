@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - n/a
+## [1.6.0] - 2021-01-20
+
+### Fixed
+- Fixed a crash when a config file is missing
+- Fixed logger setup
+
+### Added
+- Added option to keep sources in lookaside cache,
+  now by default lookaside cache folder is cleaned
 
 ## [1.5.0] - 2020-09-03
 
@@ -61,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release to PyPI
 
-[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/release-engineering/alt-src/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/release-engineering/alt-src/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/release-engineering/alt-src/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/release-engineering/alt-src/compare/v1.4.0...v1.4.1
