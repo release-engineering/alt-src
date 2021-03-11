@@ -760,7 +760,12 @@ will overwrite.", dirname, state)
         except Exception:
             self.logger.error('Unable to fetch remote repo')
             self.logger.error('Local cache exists: %s', repo)
-            raise
+            self.logger.error('Trying to reclone repo')
+            self.logger.error('Removing empty or broken repo')
+            # remove broken/empty dir
+            shutil.rmtree(repo)
+            # reclone repo
+            self.init_repo()
 
         # TODO - add sanity checks
 
