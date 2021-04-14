@@ -24,6 +24,7 @@ TESTS_PATH = os.path.dirname(__file__)
 RPMS_PATH = os.path.join(TESTS_PATH, 'data', 'rpms')
 RULES_PATH = os.path.join(TESTS_PATH, 'data', 'rules')
 MODULES_PATH = os.path.join(TESTS_PATH, 'data', 'module_source')
+GIT_REPOS_PATH =  os.path.join(TESTS_PATH, 'data', 'git_repos')
 
 DEBRAND_XFAIL = [
     # list any RPMs where debrand is expected to fail here
@@ -838,6 +839,37 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     files = os.listdir(pushdir)
     assert_that(files, empty())
     remove_handlers()
+
+
+def test_sync_repos():
+    """ check local and remote repos syncing """
+    rpm = 'grub2-2.02-0.64.el7.src.rpm'
+    remote_repo_path = os.path.join(GIT_REPOS_PATH, 'remote', 'grub2-2.02-0.64.el7.src.rpm.git')
+    local_repo_path = os.path.join(GIT_REPOS_PATH, 'local')
+    # if local testing repo was clonned earlier, remove it
+    if os.path.isdir(os.path.join(local_repo_path, rpm, '.git')):
+        shutil.rmtree(os.path.join(local_repo_path, rpm, '.git'))
+    # clone git repo frome remote
+    cmd = ['git', 'clone', '--bare', remote_repo_path, os.path.join(local_repo_path, rpm, '.git')]
+    proc = Popen(cmd, cwd=local_repo_path, stdout=PIPE, universal_newlines=True)
+
+    mock_options = MagicMock(koji=False, source="build_nvr:grub2-2.02-0.64.el7.src.rpm", config=CONFIG_DEFAULTS)
+    with patch.dict("alt_src.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
+        with patch('os.path.isfile', return_value=True):
+            processor = Stager(mock_options)
+            processor.options.config['git_fetch_url'] = remote_repo_path
+            processor.options.config['gitdir'] = GIT_REPOS_PATH
+            processor.rpms_or_module_dir = 'local'
+            processor.package = rpm
+            processor.git_url = remote_repo_path
+            # remove .git file
+            git_conf = os.path.join(local_repo_path, rpm, '.git')
+            cmd = ['sudo', 'rm', '-rf', git_conf]
+            proc = Popen(cmd, cwd=os.path.join(local_repo_path, rpm, '.git'), stdout=PIPE, universal_newlines=True)
+            # try to fix broken repo (reclone)
+            processor.sync_repo()
+
+            assert_that(os.path.isfile(git_conf), not_(empty()))
 
 
 def test_not_existing_source_file(config_file):
