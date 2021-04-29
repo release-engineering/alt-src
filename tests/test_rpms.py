@@ -841,35 +841,57 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     remove_handlers()
 
 
-def test_sync_repos():
-    """ check local and remote repos syncing """
-    rpm = 'grub2-2.02-0.64.el7.src.rpm'
-    remote_repo_path = os.path.join(GIT_REPOS_PATH, 'remote', 'grub2-2.02-0.64.el7.src.rpm.git')
-    local_repo_path = os.path.join(GIT_REPOS_PATH, 'local')
-    # if local testing repo was clonned earlier, remove it
-    if os.path.isdir(os.path.join(local_repo_path, rpm, '.git')):
-        shutil.rmtree(os.path.join(local_repo_path, rpm, '.git'))
-    # clone git repo frome remote
-    cmd = ['git', 'clone', '--bare', remote_repo_path, os.path.join(local_repo_path, rpm, '.git')]
-    proc = Popen(cmd, cwd=local_repo_path, stdout=PIPE, universal_newlines=True)
+@pytest.mark.parametrize('branch,name,version,release', [
+    ('c7', 'grub2', '2.02', '0.64.el7'),
+])
+def test_sync_repo(config_file, pushdir, lookasidedir,
+                   branch, name, version, release, default_config, capsys):
+    """Tests whether sync_repo function is able to recover from git fetch error"""
+ 
+    nvr = '-'.join([name, version, release])
+    workdir = default_config['gitdir'] + '/rpms/grub2.git'
+ 
+    # simulates broken repo in gitdir
+    os.makedirs(workdir)
+ 
+    # init simulated remote git repo
+    path = os.path.join(pushdir, "grub2.git")
+    os.makedirs(path)
+    cmd = ['git', 'init']
+    check_call(cmd, cwd=path)
+ 
+    default_config['git_fetch_url'] = default_config['git_push_url']
+    mock_options = MagicMock(git_push_url=os.path.join(pushdir, '%(package)s.git'),
+                             log_level='DEBUG', config=default_config, koji=False)
+ 
+ 
+    # clean handlers so they don't interfere with this test
+    remove_handlers()
+    # setup logger for capturing stdout/stderr
+    logger = logging.getLogger("altsrc")
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    logger.addHandler(handler)
+ 
+    with patch('alt_src.alt_src.Stager.git_push_url', return_value=workdir):
+        stager = Stager(mock_options)
+        # do a bit more setup for test
+        stager.nvr = nvr
+        stager.checkout = workdir
+        stager.package = "grub2"
+        # run desired function, should return without any error
+        stager.sync_repo()
+ 
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+    # It should not have logged an ERROR
+    assert_that(len(err), equal_to(0))
+    # It should have logged a WARNING about clonning new repo
+    w_expect = 'Clonning new repo'
+    assert(len(out) != 0)
+    assert [l for l in out_lines if w_expect in l]
 
-    mock_options = MagicMock(koji=False, source="build_nvr:grub2-2.02-0.64.el7.src.rpm", config=CONFIG_DEFAULTS)
-    with patch.dict("alt_src.alt_src.CONFIG_DEFAULTS", CONFIG_DEFAULTS):
-        with patch('os.path.isfile', return_value=True):
-            processor = Stager(mock_options)
-            processor.options.config['git_fetch_url'] = remote_repo_path
-            processor.options.config['gitdir'] = GIT_REPOS_PATH
-            processor.rpms_or_module_dir = 'local'
-            processor.package = rpm
-            processor.git_url = remote_repo_path
-            # remove .git file
-            git_conf = os.path.join(local_repo_path, rpm, '.git')
-            cmd = ['sudo', 'rm', '-rf', git_conf]
-            proc = Popen(cmd, cwd=os.path.join(local_repo_path, rpm, '.git'), stdout=PIPE, universal_newlines=True)
-            # try to fix broken repo (reclone)
-            processor.sync_repo()
-
-            assert_that(os.path.isfile(git_conf), not_(empty()))
+    remove_handlers()
 
 
 def test_not_existing_source_file(config_file):
