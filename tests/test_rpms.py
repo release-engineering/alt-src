@@ -24,7 +24,6 @@ TESTS_PATH = os.path.dirname(__file__)
 RPMS_PATH = os.path.join(TESTS_PATH, 'data', 'rpms')
 RULES_PATH = os.path.join(TESTS_PATH, 'data', 'rules')
 MODULES_PATH = os.path.join(TESTS_PATH, 'data', 'module_source')
-GIT_REPOS_PATH =  os.path.join(TESTS_PATH, 'data', 'git_repos')
 
 DEBRAND_XFAIL = [
     # list any RPMs where debrand is expected to fail here
