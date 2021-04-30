@@ -858,10 +858,11 @@ def test_sync_repo(config_file, pushdir, lookasidedir,
     os.makedirs(path)
     cmd = ['git', 'init']
     check_call(cmd, cwd=path)
- 
+
     default_config['git_fetch_url'] = default_config['git_push_url']
     mock_options = MagicMock(git_push_url=os.path.join(pushdir, '%(package)s.git'),
-                             log_level='DEBUG', config=default_config, koji=False)
+                             source=tempfile.mkstemp(dir=pushdir)[1], koji=False,
+                             log_level='DEBUG', config=default_config)
  
  
     # clean handlers so they don't interfere with this test
