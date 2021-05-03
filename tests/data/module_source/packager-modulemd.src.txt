@@ -1,0 +1,22 @@
+document: modulemd-packager
+version: 3
+data:
+    summary: A test module in all its beautiful beauty.
+    description: >-
+        A module for the demonstration of the metadata format. Also,
+        the obligatory lorem ipsum dolor sit amet goes right here.
+    configurations:
+        - context: testctx1
+          platform: el8.1.0.z
+          buildrequires:
+              testmodule: [test-reuse-tagged-module]
+          requires:
+              platform: el8.1.0.z
+          buildopts:
+              arches: [x86_64]
+    components:
+        rpms:
+            attr:
+                rationale: A build dependency of acl
+                ref: rhel-8.1.0
+                arches: [x86_64]
