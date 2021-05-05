@@ -759,13 +759,11 @@ will overwrite.", dirname, state)
             self.log_cmd(cmd, cwd=repo)
         except CommandError:
             self.logger.warning('Unable to fetch remote repo')
-            self.logger.warning('Local cache exists: %s', repo)
-            self.logger.warning('Trying to reclone repo')
+            self.logger.warning('Removing local cache: %s', repo)
             # remove broken/empty dir
-            self.logger.warning('Removing empty or broken repo')
             shutil.rmtree(repo)
             # reclone repo
-            self.logger.warning('Clonning new repo')
+            self.logger.warning('Re-initializing repo')
             self.init_repo()
         except Exception:
             self.logger.error('Unable to fetch remote repo')

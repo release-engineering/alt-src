@@ -885,11 +885,13 @@ def test_sync_repo(config_file, pushdir, lookasidedir,
     out, err = capsys.readouterr()
     out_lines = out.splitlines()
     # It should not have logged an ERROR
-    assert_that(len(err), equal_to(0))
-    # It should have logged a WARNING about clonning new repo
-    w_expect = 'Clonning new repo'
-    assert(len(out) != 0)
-    assert [l for l in out_lines if w_expect in l]
+    assert_that(err, empty())
+    # It should have logged a certain WARNINGs about cloning new repo
+    assert_that(out, not_(empty()))
+    assert 'Unable to fetch remote repo' in out_lines
+    assert 'Removing local cache: %s' % workdir in out_lines
+    assert 'Re-initializing repo' in out_lines
+
 
     remove_handlers()
 
