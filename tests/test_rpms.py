@@ -1025,13 +1025,16 @@ def test_unsupported_source_startup_error():
     mock_options = MagicMock(koji=True, source="build_nvr.src.foo")
     assert_that(calling(BaseProcessor).with_args(mock_options), raises(StartupError))
 
-
+@pytest.mark.parametrize('source_module', [
+    'fake-nvr:modulemd.src.txt',
+    'fake-nvr:packager-modulemd.src.txt',
+])
 def test_stage_module_src(config_file, pushdir, lookasidedir, capsys, default_config,
-                          mock_koji_session, mock_koji_pathinfo):
+                          mock_koji_session, mock_koji_pathinfo, source_module):
     """Verify that alt-src command completes without any errors and generates
     a commit for the given module source."""
     branch = 'c7'
-    modulemd = 'fake-nvr:modulemd.src.txt'
+    modulemd = source_module
 
     options = ['-v',
                '-c', config_file,
