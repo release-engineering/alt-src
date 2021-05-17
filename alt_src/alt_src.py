@@ -757,6 +757,14 @@ will overwrite.", dirname, state)
         cmd = ['git', 'fetch', '-v', git_url, '+refs/*:refs/*']
         try:
             self.log_cmd(cmd, cwd=repo)
+        except CommandError:
+            self.logger.warning('Unable to fetch remote repo')
+            self.logger.warning('Removing local cache: %s', repo)
+            # remove broken/empty dir
+            shutil.rmtree(repo)
+            # reclone repo
+            self.logger.warning('Re-initializing repo')
+            self.init_repo()
         except Exception:
             self.logger.error('Unable to fetch remote repo')
             self.logger.error('Local cache exists: %s', repo)

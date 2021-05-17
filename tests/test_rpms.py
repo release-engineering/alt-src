@@ -840,6 +840,62 @@ def test_stage_repo_no_master(config_file, pushdir, capsys, default_config):
     remove_handlers()
 
 
+@pytest.mark.parametrize('branch,name,version,release', [
+    ('c7', 'grub2', '2.02', '0.64.el7'),
+])
+def test_sync_repo(config_file, pushdir, lookasidedir,
+                   branch, name, version, release, default_config, capsys):
+    """Tests whether sync_repo function is able to recover from git fetch error"""
+ 
+    nvr = '-'.join([name, version, release])
+    workdir = default_config['gitdir'] + '/rpms/grub2.git'
+ 
+    # simulates broken repo in gitdir
+    os.makedirs(workdir)
+ 
+    # init simulated remote git repo
+    path = os.path.join(pushdir, "grub2.git")
+    os.makedirs(path)
+    cmd = ['git', 'init']
+    check_call(cmd, cwd=path)
+
+    default_config['git_fetch_url'] = default_config['git_push_url']
+    mock_options = MagicMock(git_push_url=os.path.join(pushdir, '%(package)s.git'),
+                             source=tempfile.mkstemp(dir=pushdir)[1], koji=False,
+                             log_level='DEBUG', config=default_config)
+ 
+ 
+    # clean handlers so they don't interfere with this test
+    remove_handlers()
+    # setup logger for capturing stdout/stderr
+    logger = logging.getLogger("altsrc")
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    logger.addHandler(handler)
+ 
+    with patch('alt_src.alt_src.Stager.git_push_url', return_value=workdir):
+        stager = Stager(mock_options)
+        # do a bit more setup for test
+        stager.nvr = nvr
+        stager.checkout = workdir
+        stager.package = "grub2"
+        # run desired function, should return without any error
+        stager.sync_repo()
+ 
+    out, err = capsys.readouterr()
+    out_lines = out.splitlines()
+    # It should not have logged an ERROR
+    assert_that(err, empty())
+    # It should have logged a certain WARNINGs about cloning new repo
+    assert_that(out, not_(empty()))
+    assert 'Unable to fetch remote repo' in out_lines
+    assert 'Removing local cache: %s' % workdir in out_lines
+    assert 'Re-initializing repo' in out_lines
+
+
+    remove_handlers()
+
+
 def test_not_existing_source_file(config_file):
     rpm = 'foo.src.rpm'
 
