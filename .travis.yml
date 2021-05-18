@@ -10,9 +10,9 @@ install: pip install tox
 matrix:
   include:
   - python: "2.7"
-    env: TOX_ENV=cov-travis DEPLOY=1
+    env: TOX_ENV=cov-travis
   - python: "3.6"
-    env: TOX_ENV=py36
+    env: TOX_ENV=py36 DEPLOY=1
 
 script: tox -e $TOX_ENV
 
