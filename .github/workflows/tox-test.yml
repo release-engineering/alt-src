@@ -1,0 +1,57 @@
+name: Tox tests
+
+on: [push, pull_request]
+
+jobs:
+  py27:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install RPM
+        run: sudo apt-get install -y rpm libkrb5-dev
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 2.7
+      - name: Install Tox
+        run: pip install tox
+      - name: Run Tox
+        run: tox -e py27
+  py38:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install RPM
+        run: sudo apt-get install -y rpm cpio libkrb5-dev
+      - name: Upgrade pip
+        run: pip install --upgrade pip
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install Tox
+        run: pip install tox
+      - name: Run Tox
+        run: tox -e py38
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install RPM
+        run: sudo apt-get install -y rpm cpio libkrb5-dev
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 2.7
+      - name: Install Tox
+        run: pip install tox
+      - name: Run Tox
+        run: tox -e cov
+      - name: Install pytest cov
+        run: pip install pytest-cov
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1.5.0
+        with:
+          fail_ci_if_error: true
+          verbose: true
