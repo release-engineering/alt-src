@@ -1,6 +1,6 @@
 koji
 rpm-py-installer
 requests
-PyYAML
+PyYAML==5.4.1
 simplejson
 six>=1.8.0
