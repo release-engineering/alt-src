@@ -338,7 +338,7 @@ class BaseProcessor(object):
         module_data = self.mmd_parsed['data']
         fobj = open(self.source_file)
         try:
-            self.src_mmd_parsed = yaml.load(fobj)
+            self.src_mmd_parsed = yaml.load(fobj, Loader=yaml.BaseLoader)
         finally:
             fobj.close()
 
@@ -1356,7 +1356,7 @@ failed to apply.
                               "SOURCES",
                               os.path.basename(self.source_file)), "w")
         try:
-            yaml.dump(src_mmd_parsed_copy, fobj)
+            yaml.dump(src_mmd_parsed_copy, fobj, Dumper=yaml.SafeDumper)
         finally:
             fobj.close()
 
