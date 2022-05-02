@@ -1949,7 +1949,7 @@ class Pusher(BaseProcessor):
         }
 
         self.logger.info("Creating pagure repo:: %s", values)
-        data = urlencode(values)
+        data = urlencode(values).encode("utf-8")
         req = Request(
             self.options.config['pagure_repo_init_api'],
             data=data,
