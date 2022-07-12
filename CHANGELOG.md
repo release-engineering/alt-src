@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - n/a
 
+## [1.6.2] - 2022-07-12
+### Fixed
+- Fixed a Python 3 issue where bytes are expected as argument instead of string
+- Fixed compatibility with latest PyYAML
+
 ## [1.6.1] - 2021-05-17
 ### Fixed
 - Fixed a crash when a repo cannot be fetched
@@ -75,7 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release to PyPI
 
-[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/release-engineering/alt-src/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/release-engineering/alt-src/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/release-engineering/alt-src/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/release-engineering/alt-src/compare/v1.4.2...v1.5.0
