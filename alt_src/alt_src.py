@@ -334,11 +334,11 @@ class BaseProcessor(object):
             self.read_srpm()
 
     def read_mmd(self):
-        self.mmd_parsed = yaml.load(self.mmd, Loader=yaml.BaseLoader)
+        self.mmd_parsed = yaml.load(self.mmd, Loader=yaml.BaseLoader) #nosec B506
         module_data = self.mmd_parsed['data']
         fobj = open(self.source_file)
         try:
-            self.src_mmd_parsed = yaml.load(fobj, Loader=yaml.BaseLoader)
+            self.src_mmd_parsed = yaml.load(fobj, Loader=yaml.BaseLoader) #nosec B506
         finally:
             fobj.close()
 
@@ -1033,7 +1033,7 @@ If you find this file in a distro specific branch, it means that no content has 
     def get_digest(self, path):
         """Calculate hex digest for file"""
 
-        csum = hashlib.sha1()
+        csum = hashlib.sha1() #nosec B324
         fobj = open(path, 'rb')
         chunk = 'IGNORE ME!'
         while chunk:
@@ -1956,7 +1956,7 @@ class Pusher(BaseProcessor):
             headers=headers,
         )
 
-        resp = urlopen(req)
+        resp = urlopen(req) #nosec B310
         resp = json.loads(resp.read())
         self.logger.info(resp)
 

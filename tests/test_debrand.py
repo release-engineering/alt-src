@@ -189,8 +189,7 @@ def fake_mmd():
 @pytest.fixture
 def fake_src_mmd():
     with open(os.path.join(MODULES_PATH, "modulemd.src.txt")) as f:
-        return yaml.load(f, Loader=yaml.BaseLoader)
-
+        return yaml.load(f, Loader=yaml.BaseLoader) #nosec B506
 
 @pytest.fixture()
 def test_dir(tmp_path):
@@ -475,9 +474,9 @@ def test_rule_mmd_no_change(stager_setup):
     stager.read_source_file()
     stager.debrand()
     with open(os.path.join(checkout_dir, "SOURCES", "modulemd.src.txt")) as f:
-        mmd1 = yaml.load(f, Loader=yaml.BaseLoader)
+        mmd1 = yaml.load(f, Loader=yaml.BaseLoader) #nosec B506
 
     with open(os.path.join(MODULES_PATH, "modulemd.src.txt")) as f:
-        mmd2 = yaml.load(f, Loader=yaml.BaseLoader)
+        mmd2 = yaml.load(f, Loader=yaml.BaseLoader) #nosec B506
 
     assert_that(mmd1, equal_to(mmd2))
