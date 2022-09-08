@@ -55,3 +55,35 @@ jobs:
         with:
           fail_ci_if_error: true
           verbose: true
+  bandit-exitzero:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install RPM
+        run: |
+          sudo apt-get install -y rpm
+          sudo apt-get install -y libkrb5-dev
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install Tox
+        run: pip install tox
+      - name: Run Tox
+        run: tox -e bandit-exitzero
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install RPM
+        run: |
+          sudo apt-get install -y rpm
+          sudo apt-get install -y libkrb5-dev
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Install Tox
+        run: pip install tox
+      - name: Run Tox
+        run: tox -e bandit
