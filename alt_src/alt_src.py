@@ -1033,7 +1033,7 @@ If you find this file in a distro specific branch, it means that no content has 
     def get_digest(self, path):
         """Calculate hex digest for file"""
 
-        csum = hashlib.sha1() #nosec B324
+        csum = hashlib.sha1() #nosec B324, B303
         fobj = open(path, 'rb')
         chunk = 'IGNORE ME!'
         while chunk:
