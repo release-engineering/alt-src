@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: 3.8
       - name: Install Tox
-        run: pip install tox
+        run: pip install tox 'virtualenv<20.21.1'
       - name: Run Tox
         run: tox -e py38
 
@@ -31,7 +31,7 @@ jobs:
         with:
           python-version: 3.8
       - name: Install Tox
-        run: pip install tox
+        run: pip install tox 'virtualenv<20.21.1'
       - name: Run Tox
         run: tox -e cov
       - name: Install pytest cov
@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: 3.8
       - name: Install Tox
-        run: pip install tox
+        run: pip install tox 'virtualenv<20.21.1'
       - name: Run Tox
         run: tox -e bandit-exitzero
   bandit:
@@ -70,6 +70,6 @@ jobs:
         with:
           python-version: 3.8
       - name: Install Tox
-        run: pip install tox
+        run: pip install tox 'virtualenv<20.21.1'
       - name: Run Tox
         run: tox -e bandit
