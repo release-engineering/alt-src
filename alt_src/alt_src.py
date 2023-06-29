@@ -1929,7 +1929,7 @@ class Pusher(BaseProcessor):
         keyfile = None
         try:
             keyfile = open(self.options.config['pagure_api_key_file'], 'r')
-            key = keyfile.read()
+            key = keyfile.read().strip()
         finally:
             if keyfile:
                 keyfile.close()
