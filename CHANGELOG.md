@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - n/a
 
+## [1.6.3] - 2023-09-19
+### Fixed
+- Fixed parsing of `pagure_api_key_file`
+
 ## [1.6.2] - 2022-07-12
 ### Fixed
 - Fixed a Python 3 issue where bytes are expected as argument instead of string
@@ -80,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release to PyPI
 
-[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/release-engineering/alt-src/compare/v1.6.3...HEAD
+[1.6.3]: https://github.com/release-engineering/alt-src/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/release-engineering/alt-src/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/release-engineering/alt-src/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/release-engineering/alt-src/compare/v1.5.0...v1.6.0
