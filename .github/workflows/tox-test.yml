@@ -7,8 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install RPM
-        run: sudo apt-get install -y rpm cpio libkrb5-dev
+      - name: Install OS packages
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y rpm cpio libkrb5-dev
       - name: Upgrade pip
         run: pip install --upgrade pip
       - name: Setup Python
@@ -24,8 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install RPM
-        run: sudo apt-get install -y rpm cpio libkrb5-dev
+      - name: Install OS packages
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y rpm cpio libkrb5-dev
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
@@ -45,8 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install RPM
+      - name: Install OS packages
         run: |
+          sudo apt-get -y update
           sudo apt-get install -y rpm
           sudo apt-get install -y libkrb5-dev
       - name: Setup Python
@@ -61,8 +66,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install RPM
+      - name: Install OS packages
         run: |
+          sudo apt-get -y update
           sudo apt-get install -y rpm
           sudo apt-get install -y libkrb5-dev
       - name: Setup Python
