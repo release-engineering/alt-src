@@ -1,6 +1,0 @@
-koji
-rpm-py-installer
-requests
-PyYAML
-simplejson
-six>=1.8.0
