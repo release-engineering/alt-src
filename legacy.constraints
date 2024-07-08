@@ -1,3 +1,0 @@
-# Add oldest supported version of selected dependencies here
-# to ensure they're tested on at least one CI config
-six==1.9.0
